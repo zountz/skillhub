@@ -465,3 +465,83 @@ def sync_all(targets: list[str] | None = None, only: list[str] | None = None) ->
             results.append({"agent": ag.key, "agent_name": ag.name, "skill": name, "ok": r.ok, "message": r.message})
     log_action("sync_all", f"{len(results)} 项变更", ok=all(x["ok"] for x in results) if results else True)
     return results
+
+
+# --------------------------------------------------------------------------- #
+# 自动同步: 只补缺失, 不动存量
+# --------------------------------------------------------------------------- #
+def _link_missing(name: str, targets: list[str] | None = None) -> list[dict[str, Any]]:
+    """给单个 skill 在缺失它的工具里建链接. 返回实际动作."""
+    done: list[dict[str, Any]] = []
+    for ag in AGENTS:
+        if not ag.available or not ag.skills_dir.exists():
+            continue
+        if targets and ag.key not in targets:
+            continue
+        if probe(ag.skills_dir / name, SKILLS_SOURCE / name) != MISSING:
+            continue
+        r = link_skill(ag, name)
+        done.append({"agent": ag.key, "agent_name": ag.name, "skill": name, "ok": r.ok, "message": r.message})
+    return done
+
+
+def sync_new(targets: list[str] | None = None) -> list[dict[str, Any]]:
+    """给新出现的 skill 补上链接. 已存在的一切(副本/断链/外部链接)原样不动.
+
+    这是给"装完自动同步"用的入口, 所以必须**绝对安全**:
+      - missing  -> 建链接(目标位置本来就是空的, 不覆盖任何东西)
+      - copy     -> 跳过. 用户目录里已有内容, 自动改造成链接等于静默搬走文件,
+                    必须由人在界面上确认
+      - broken   -> 跳过, 留给人工处理
+      - foreign  -> 跳过
+    """
+    results: list[dict[str, Any]] = []
+    for meta in list_sources():
+        results.extend(_link_missing(meta.name, targets))
+
+    if results:
+        log_action(
+            "auto_sync",
+            f"自动补齐 {len(results)} 项: " + ", ".join(f"{x['skill']}@{x['agent']}" for x in results[:8]),
+            ok=all(x["ok"] for x in results),
+        )
+    return results
+
+
+def watch(interval: float = 3.0, targets: list[str] | None = None, on_event=None) -> None:
+    """轮询真源目录, 发现新 skill 就自动补齐链接. 阻塞运行直到 Ctrl+C.
+
+    用轮询而不是 watchdog: 只列一次目录, 开销可忽略, 还省掉一个依赖.
+    """
+    import time
+
+    def emit(kind: str, msg: str) -> None:
+        if on_event:
+            on_event(kind, msg)
+
+    known = {m.name for m in list_sources()}
+    emit("start", f"已监听 {short(SKILLS_SOURCE)}, 当前 {len(known)} 个 skill")
+
+    try:
+        while True:
+            time.sleep(interval)
+            current = {m.name for m in list_sources()}
+            added, removed = current - known, known - current
+
+            if added:
+                linked: list[str] = []
+                for name in sorted(added):
+                    for rec in _link_missing(name, targets):
+                        if rec["ok"]:
+                            linked.append(f"{name}@{rec['agent']}")
+                if linked:
+                    emit("added", f"新增 {len(added)} 个 skill, 已链接 {len(linked)} 处: " + ", ".join(linked[:6]))
+                else:
+                    emit("added", f"新增 {len(added)} 个 skill (无需补链)")
+
+            if removed:
+                emit("removed", f"真源中移除 {len(removed)} 个: {', '.join(sorted(removed))}")
+
+            known = current
+    except KeyboardInterrupt:
+        emit("stop", "已停止监听")

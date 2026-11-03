@@ -107,6 +107,16 @@ class Bridge:
         }
 
     @_wrap
+    def auto_sync(self) -> dict[str, Any]:
+        """启动时自动补齐新 skill 的链接.
+
+        只处理"目标位置为空"的情况, 已有副本一律不动 —— 界面上启动即跑,
+        所以绝对不能有副作用。
+        """
+        rows = skills.sync_new()
+        return {"changed": len(rows), "results": rows[:20]}
+
+    @_wrap
     def toggle_skill(self, agent_key: str, name: str) -> dict[str, Any]:
         """点一下徽标: 已链接则断开, 否则建立链接."""
         ag = skills_agent(agent_key)

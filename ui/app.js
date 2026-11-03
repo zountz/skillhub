@@ -52,6 +52,18 @@ async function loadAll() {
   STATE.logs = data.logs;
   STATE.stats = data.stats;
   renderAll();
+
+  // 启动即自动补齐新装 skill 的链接(只补缺失, 不动已有副本)
+  try {
+    const auto = await call('auto_sync');
+    if (auto && auto.changed > 0) {
+      const names = [...new Set((auto.results || []).map((r) => r.skill))].slice(0, 3).join('、');
+      toast(`已自动补齐 ${auto.changed} 处链接：${names}`);
+      await refresh();
+    }
+  } catch (e) {
+    console.warn('自动同步跳过:', e);
+  }
 }
 
 function renderAll() {
