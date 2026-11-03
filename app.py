@@ -26,6 +26,8 @@ def run_selftest(window: webview.Window) -> None:
         "mcpRows": "document.querySelectorAll('#mcpTable tbody tr').length",
         "agentCards": "document.querySelectorAll('.agent-card').length",
         "healthItems": "document.querySelectorAll('.health-item').length",
+        "autoSyncBtn": "document.getElementById('btnAutoSync') ? document.getElementById('btnAutoSync').textContent : '<缺失>'",
+        "syncAllBtn": "document.getElementById('btnSyncAll') ? document.getElementById('btnSyncAll').textContent : '<缺失>'",
         "pageSub": "document.getElementById('pageSub').textContent",
         "toast": "document.getElementById('toast').className",
         "jsError": "window.__lastError || ''",
@@ -90,6 +92,18 @@ def run_shot(window: webview.Window) -> None:
             out = Path(tempfile.gettempdir()) / f"skillhub-{view}.png"
             ImageGrab.grab().save(out)
             print(f"SHOT[{view}]: {out}")
+
+        # 额外截一张「全量同步」二次确认态
+        try:
+            window.evaluate_js("document.querySelector('.nav-item[data-view=\"overview\"]').click()")
+            time.sleep(0.5)
+            window.evaluate_js("document.getElementById('btnSyncAll').click()")
+            time.sleep(0.6)
+            out = Path(tempfile.gettempdir()) / "skillhub-confirm.png"
+            ImageGrab.grab().save(out)
+            print(f"SHOT[confirm]: {out}")
+        except Exception as exc:
+            print(f"确认态截图失败: {exc}")
     except Exception as exc:
         print(f"截图失败: {exc}")
     time.sleep(0.5)

@@ -98,7 +98,9 @@ function setView(view) {
   };
   el('pageTitle').textContent = titles[view][0];
   el('pageSub').textContent = titles[view][1];
-  el('btnSyncAll').style.display = view === 'logs' ? 'none' : '';
+  const hide = view === 'logs';
+  el('btnSyncAll').style.display = hide ? 'none' : '';
+  el('btnAutoSync').style.display = hide ? 'none' : '';
 }
 
 /* ---------------------------------------------------------------- 总览 */
@@ -398,8 +400,50 @@ document.addEventListener('click', async (ev) => {
 document.querySelectorAll('.nav-item').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 el('btnRefresh').addEventListener('click', (e) => busy(e.target, refresh));
 
-el('btnSyncAll').addEventListener('click', (e) =>
+/* 补齐缺失: 安全操作, 只给空位建链接 */
+el('btnAutoSync').addEventListener('click', (e) =>
   busy(e.target, async () => {
+    const r = await call('auto_sync');
+    if (!r.changed) {
+      toast('没有需要补的链接 —— 各工具都已是最新');
+      return;
+    }
+    const names = [...new Set((r.results || []).map((x) => x.skill))].slice(0, 3).join('、');
+    toast(`已补齐 ${r.changed} 处链接：${names}`);
+    await refresh();
+  })
+);
+
+/* 全量同步: 会改造副本, 需要二次确认 */
+let syncArmTimer = null;
+function disarmSync(btn) {
+  delete btn.dataset.armed;
+  btn.classList.remove('danger');
+  btn.textContent = '全量同步';
+}
+
+el('btnSyncAll').addEventListener('click', (e) => {
+  const btn = e.target;
+
+  if (!btn.dataset.armed) {
+    // 第一次点: 先算清楚会被改造多少个副本, 让数字说话
+    const copies = STATE.skills
+      ? STATE.skills.rows.reduce(
+          (n, r) => n + Object.values(r.states).filter((s) => s === 'copy' || s === 'broken').length,
+          0
+        )
+      : 0;
+    btn.dataset.armed = '1';
+    btn.classList.add('danger');
+    btn.textContent = copies ? `确认改造 ${copies} 个副本？` : '确认全量同步？';
+    clearTimeout(syncArmTimer);
+    syncArmTimer = setTimeout(() => disarmSync(btn), 4000);
+    return;
+  }
+
+  clearTimeout(syncArmTimer);
+  disarmSync(btn);
+  busy(btn, async () => {
     const a = await call('sync_skills');
     const b = await call('mcp_sync');
     const skillFail = a.failed.length;
@@ -407,8 +451,8 @@ el('btnSyncAll').addEventListener('click', (e) =>
     const msg = `Skill 变更 ${a.changed} 项，MCP 写入 ${(b.results || []).filter((r) => r.status === 'written').length} 个`;
     toast(skillFail + mcpFail ? `${msg}，失败 ${skillFail + mcpFail} 项` : msg, skillFail + mcpFail > 0);
     await refresh();
-  })
-);
+  });
+});
 
 el('btnMcpImport').addEventListener('click', (e) =>
   busy(e.target, async () => {
