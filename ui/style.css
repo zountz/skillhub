@@ -124,6 +124,27 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11.5px; }
 .agent-card.is-off { opacity: .55; }
 .agent-head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
 .agent-name { font-weight: 600; font-size: 13.5px; }
+
+/* 自动同步开关 */
+.toggle { margin-left: auto; display: inline-flex; cursor: pointer; flex: none; }
+.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  width: 30px; height: 17px; border-radius: 9px;
+  background: var(--line-strong); display: block; position: relative;
+  transition: background .15s ease;
+}
+.toggle-thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: #fff; transition: transform .15s ease;
+}
+.toggle input:checked + .toggle-track { background: var(--accent); }
+.toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(13px); }
+.toggle input:focus-visible + .toggle-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.agent-card.is-muted { background: var(--surface-2); }
+.agent-card.is-muted .agent-name { color: var(--ink-3); }
+.auto-note { font-size: 10.5px; color: var(--ink-3); margin-left: auto; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
 .dot.off { background: var(--line-strong); }
 .agent-metrics { display: flex; gap: 16px; margin-bottom: 9px; }
@@ -155,6 +176,7 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11.5px; }
 .col-name { min-width: 200px; }
 
 .skill-name { font-weight: 550; font-size: 12.8px; }
+.skill-alias { font-weight: 400; font-size: 11px; color: var(--ink-3); margin-left: 6px; }
 .skill-desc { color: var(--ink-3); font-size: 11px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
 .skill-path { color: var(--ink-3); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; margin-top: 1px; }
 

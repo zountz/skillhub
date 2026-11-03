@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import settings
 from .paths import AGENTS, BACKUP_DIR, SKILLS_SOURCE, Agent, is_windows, short
 from .safeio import log_action
 
@@ -37,14 +38,18 @@ STATE_LABEL = {
 # --------------------------------------------------------------------------- #
 @dataclass
 class SkillMeta:
+    #: 目录名 —— 一切路径操作的唯一依据, 绝不使用 frontmatter 里的 name
     name: str
     path: Path
     description: str = ""
     version: str = ""
+    #: frontmatter 里的 name, 仅供展示. 很多 skill 会写成 "My Skill" 这种带空格的名字,
+    #: 拿它拼路径必然找不到目录.
+    display_name: str = ""
 
     @property
     def title(self) -> str:
-        return self.name
+        return self.display_name or self.name
 
 
 def _parse_frontmatter(text: str) -> dict[str, str]:
@@ -113,7 +118,9 @@ def read_meta(skill_dir: Path) -> SkillMeta:
         except OSError:
             return meta
         fm = _parse_frontmatter(text)
-        meta.name = fm.get("name") or meta.name
+        # 注意: 只把 frontmatter 的 name 记成 display_name, 不覆盖目录名.
+        # 目录名才是磁盘上的真实标识, 用 display_name 拼路径会找不到目录.
+        meta.display_name = (fm.get("name") or "").strip() or meta.name
         meta.description = fm.get("description", "")
         meta.version = fm.get("version", "")
         if not meta.description:
@@ -407,6 +414,7 @@ def scan() -> dict[str, Any]:
         rows.append(
             {
                 "name": meta.name,
+                "display_name": meta.display_name or meta.name,
                 "description": meta.description,
                 "version": meta.version,
                 "path": short(meta.path),
@@ -471,12 +479,16 @@ def sync_all(targets: list[str] | None = None, only: list[str] | None = None) ->
 # 自动同步: 只补缺失, 不动存量
 # --------------------------------------------------------------------------- #
 def _link_missing(name: str, targets: list[str] | None = None) -> list[dict[str, Any]]:
-    """给单个 skill 在缺失它的工具里建链接. 返回实际动作."""
+    """给单个 skill 在缺失它的工具里建链接. 返回实际动作.
+
+    targets 为 None 时按用户设置决定哪些工具参与自动同步;
+    显式传入时以传入为准(命令行 --agent 用)。
+    """
     done: list[dict[str, Any]] = []
     for ag in AGENTS:
         if not ag.available or not ag.skills_dir.exists():
             continue
-        if targets and ag.key not in targets:
+        if not settings.apply_to(ag, targets):
             continue
         if probe(ag.skills_dir / name, SKILLS_SOURCE / name) != MISSING:
             continue

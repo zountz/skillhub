@@ -88,6 +88,24 @@ python cli.py gui           # 打开桌面界面
 
 原因很简单：自动把用户目录里真实存在的副本换成链接，等于静默搬走文件。哪怕有备份，也不该在你没看见的时候发生。要批量改造存量副本，用 `sync --force`，或者到界面上逐项确认——这两种方式都有明确的「我现在要改」语义。
 
+### 按平台关掉自动同步
+
+总览页每张工具卡右上角有个开关，关掉后该工具**不再接收任何自动推送的 skill**：
+
+- 新 skill 不会自动铺进来
+- 手里已有的 skill 一个都不动（既不删也不改）
+- 想单独给它装某个 skill，仍然可以点 Skills 页那一格的徽标手动建链接
+
+配置存在 `data/settings.json`：
+
+```json
+{ "auto_sync": { "workbuddy": false } }
+```
+
+**没写进配置的工具一律视为参与**。这是刻意的默认方向——新增工具时不会因为忘了配置就静默不接收 skill。
+
+命令行侧：`cli.py sync` 和 `cli.py watch` 都遵守这个开关；如果显式传 `--agent qoder`，则以命令行为准，忽略开关。
+
 想让自动同步常驻，用 `python cli.py watch`，再把这个命令挂到任务计划程序的开机启动里即可。
 
 ## 安全机制
@@ -114,13 +132,16 @@ python tests/test_roundtrip.py
 ```
 skillhub/
   paths.py     路径与工具定义（唯一需要按机器改的地方）
-  skills.py    扫描 / 状态判定 / junction 建立 / 纳管
+  skills.py    扫描 / 状态判定 / junction 建立 / 纳管 / 自动同步
   mcp.py       manifest 读写 / 各家格式渲染 / 同步
+  settings.py  用户偏好（哪些工具参与自动同步）
   safeio.py    备份 / 原子写 / 操作日志
   api.py       暴露给界面的方法
+cli.py         命令行入口
 ui/            index.html + style.css + app.js（无框架）
 data/
   mcp-servers.json   MCP 单一真源
+  settings.json      本机偏好
   backups/           所有改动前的存档
   logs/actions.jsonl 操作记录
 ```

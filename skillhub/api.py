@@ -13,9 +13,9 @@ import sys
 import traceback
 from typing import Any, Callable
 
-from . import __version__, mcp, skills
+from . import __version__, mcp, settings, skills
 from .paths import AGENTS, BACKUP_DIR, MCP_MANIFEST, SKILLS_SOURCE, Agent, ensure_dirs, short
-from .safeio import recent_actions
+from .safeio import log_action, recent_actions
 
 
 def _wrap(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
@@ -64,10 +64,14 @@ class Bridge:
         """一次性拿全量状态, 界面刷新就调这个."""
         sk = skills.scan()
         mc = mcp.scan_mcp()
+        auto = settings.snapshot()
+        for a in sk["agents"]:
+            a["auto_sync"] = auto.get(a["key"], True)
         return {
             "skills": sk,
             "mcp": mc,
             "logs": recent_actions(40),
+            "auto_sync": auto,
             "stats": {
                 "skills": sk["total"],
                 "skills_linked": sum(r["linked_count"] for r in sk["rows"]),
@@ -115,6 +119,26 @@ class Bridge:
         """
         rows = skills.sync_new()
         return {"changed": len(rows), "results": rows[:20]}
+
+    @_wrap
+    def set_auto_sync(self, agent_key: str, enabled: bool) -> dict[str, Any]:
+        """设置某工具是否参与自动同步.
+
+        关掉之后它不会再收到自动推送的 skill, 手里已有的也不动;
+        想在它那里单独装某个 skill, 仍然可以点那一格的徽标手动建链接。
+        """
+        settings.set_auto(agent_key, enabled)
+        ag = skills_agent(agent_key)
+        log_action(
+            "set_auto",
+            f"{ag.name} {'参与' if enabled else '不参与'}自动同步",
+            ok=True,
+            agent=agent_key,
+        )
+        return {
+            "ok": True,
+            "message": f"{ag.name} 现在{'参与' if enabled else '不参与'}自动同步",
+        }
 
     @_wrap
     def toggle_skill(self, agent_key: str, name: str) -> dict[str, Any]:

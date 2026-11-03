@@ -1,10 +1,12 @@
-# ---- 运行时数据: 含敏感信息, 绝不入库 ----
+# 运行时数据: 含敏感信息, 绝不入库 ----
 # mcp-servers.json 里存着 MCP 服务的 env (SSH 密码等)
 data/mcp-servers.json
 # 每次改动前的配置备份, 是各家配置的完整副本
 data/backups/
 # 操作日志里有本机绝对路径
 data/logs/
+# 本机偏好(哪些工具参与自动同步), 与具体机器相关
+data/settings.json
 
 # ---- Python ----
 __pycache__/

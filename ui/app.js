@@ -124,11 +124,16 @@ function renderOverview() {
   el('agentGrid').innerHTML = sk.agents
     .map((a) => {
       const mcpAgent = mc.agents.find((x) => x.key === a.key) || {};
+      const auto = a.auto_sync !== false;
       return `
-      <div class="agent-card ${a.available ? '' : 'is-off'}">
+      <div class="agent-card ${a.available ? '' : 'is-off'} ${auto ? '' : 'is-muted'}">
         <div class="agent-head">
           <span class="dot ${a.available ? '' : 'off'}"></span>
           <span class="agent-name">${esc(a.name)}</span>
+          <label class="toggle" title="${auto ? '参与自动同步：新 skill 会自动铺进来' : '不参与自动同步：不会再收到其他 skill'}">
+            <input type="checkbox" data-auto="${a.key}" ${auto ? 'checked' : ''}>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
         </div>
         <div class="agent-metrics">
           <div class="metric"><span class="metric-num">${a.count}</span><span class="metric-label">Skills</span></div>
@@ -140,6 +145,7 @@ function renderOverview() {
         <div class="agent-foot">
           <button class="mini-btn" data-openpath="${esc(a.skills_dir)}">打开目录</button>
           ${a.available ? '' : '<span class="mini-btn" style="color:var(--ink-3)">未安装</span>'}
+          ${auto ? '' : '<span class="auto-note">不参与自动同步</span>'}
         </div>
       </div>`;
     })
@@ -206,10 +212,14 @@ function renderSkills() {
                     title="${st === 'copy' ? '副本：点击改为链接（原内容会备份）' : st === 'linked' ? '已链接：点击断开' : '点击建立链接'}">${label}</span></td>`;
         }).join('');
         const canFix = AGENT_ORDER.some((k) => r.states[k] === 'copy');
+        const alias =
+          r.display_name && r.display_name !== r.name
+            ? `<span class="skill-alias">${esc(r.display_name)}</span>`
+            : '';
         return `
           <tr>
             <td>
-              <div class="skill-name">${esc(r.name)}</div>
+              <div class="skill-name">${esc(r.name)}${alias}</div>
               ${r.description ? `<div class="skill-desc" title="${esc(r.description)}">${esc(r.description)}</div>` : ''}
             </td>
             ${cells}
@@ -461,6 +471,22 @@ el('btnMcpImport').addEventListener('click', (e) =>
     await refresh();
   })
 );
+
+/* 自动同步开关: 某个工具不参与时, 不会再接收自动推送的 skill */
+document.addEventListener('change', async (e) => {
+  const cb = e.target.closest && e.target.closest('[data-auto]');
+  if (!cb) return;
+  const key = cb.dataset.auto;
+  const on = cb.checked;
+  try {
+    const r = await call('set_auto_sync', key, on);
+    toast(r.message);
+    await refresh();
+  } catch (err) {
+    cb.checked = !on;
+    toast(err.message || String(err), true);
+  }
+});
 
 el('skillSearch').addEventListener('input', renderSkills);
 
