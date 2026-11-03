@@ -1,0 +1,24 @@
+# ---- 运行时数据: 含敏感信息, 绝不入库 ----
+# mcp-servers.json 里存着 MCP 服务的 env (SSH 密码等)
+data/mcp-servers.json
+# 每次改动前的配置备份, 是各家配置的完整副本
+data/backups/
+# 操作日志里有本机绝对路径
+data/logs/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.swp
+
+# ---- 开发截图 ----
+*.png

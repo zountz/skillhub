@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "updated": "",
+  "_comment": "示例文件。真正的 data/mcp-servers.json 不会入库(含 env 里的密钥),首次启动会自动从各工具现有配置导入生成。",
+  "servers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "D:/work"],
+      "targets": ["claude", "codex", "qoder", "workbuddy"]
+    },
+    "ssh-vm": {
+      "command": "C:/Python/Scripts/python.exe",
+      "args": ["C:/mcp/ssh_mcp_server.py"],
+      "env": { "SSH_HOST": "192.168.1.10", "SSH_USER": "root" },
+      "targets": ["qoder", "workbuddy"],
+      "disable_in": ["workbuddy"],
+      "note": "targets 限定只写这两个工具; disable_in 表示在 WorkBuddy 里保持关闭"
+    },
+    "codex-internal": {
+      "command": "C:/some/runtime/node.exe",
+      "args": ["server.mjs"],
+      "targets": ["codex"],
+      "note": "绑定本机运行时的服务, 只留给 Codex, 不要扩散"
+    }
+  }
+}

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkillHub</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <span class="brand-mark">S</span>
+      <span class="brand-text">SkillHub</span>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item is-active" data-view="overview">总览</button>
+      <button class="nav-item" data-view="skills">Skills <span class="nav-badge" id="navSkillCount">0</span></button>
+      <button class="nav-item" data-view="mcp">MCP <span class="nav-badge" id="navMcpCount">0</span></button>
+      <button class="nav-item" data-view="logs">操作记录</button>
+    </nav>
+
+    <div class="side-foot">
+      <div class="foot-row"><span>真源</span><code id="footSource">—</code></div>
+      <button class="link-btn" data-open="source">打开目录</button>
+      <div class="foot-row"><span>备份</span><code id="footBackup">data/backups</code></div>
+      <button class="link-btn" data-open="backups">打开目录</button>
+      <div class="version" id="footVersion"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="titles">
+        <h1 id="pageTitle">总览</h1>
+        <p id="pageSub">正在读取配置…</p>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnRefresh">刷新</button>
+        <button class="btn primary" id="btnSyncAll">全部同步</button>
+      </div>
+    </header>
+
+    <!-- 总览 -->
+    <section class="view" id="view-overview">
+      <div class="health" id="healthStrip"></div>
+      <div class="agent-grid" id="agentGrid"></div>
+      <div class="panel" id="attentionPanel" hidden>
+        <div class="panel-head">
+          <h2>需要注意</h2>
+        </div>
+        <ul class="todo-list" id="todoList"></ul>
+      </div>
+    </section>
+
+    <!-- Skills -->
+    <section class="view" id="view-skills" hidden>
+      <div class="toolbar">
+        <div class="toolbar-note" id="skillNote"></div>
+        <div class="spacer"></div>
+        <label class="search">
+          <input type="search" id="skillSearch" placeholder="筛选 skill 名称">
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table class="grid" id="skillTable">
+          <thead>
+            <tr>
+              <th class="col-name">Skill</th>
+              <th class="col-agent">Claude Code</th>
+              <th class="col-agent">Codex</th>
+              <th class="col-agent">Qoder CN</th>
+              <th class="col-agent">WorkBuddy</th>
+              <th class="col-op"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel" id="unmanagedPanel" hidden>
+        <div class="panel-head">
+          <h2>未纳管的 Skill</h2>
+          <p>这些只存在于某个工具里，收进真源后即可共享给全部工具。</p>
+        </div>
+        <div class="chip-row" id="unmanagedChips"></div>
+      </div>
+    </section>
+
+    <!-- MCP -->
+    <section class="view" id="view-mcp" hidden>
+      <div class="toolbar">
+        <div class="toolbar-note" id="mcpNote"></div>
+        <div class="spacer"></div>
+        <button class="btn" id="btnMcpImport">重新导入现有配置</button>
+      </div>
+      <div class="table-wrap">
+        <table class="grid" id="mcpTable">
+          <thead>
+            <tr>
+              <th class="col-name">MCP 服务</th>
+              <th class="col-agent">Claude Code</th>
+              <th class="col-agent">Codex</th>
+              <th class="col-agent">Qoder CN</th>
+              <th class="col-agent">WorkBuddy</th>
+              <th class="col-op">全局</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel" id="orphanPanel" hidden>
+        <div class="panel-head">
+          <h2>游离条目</h2>
+          <p>在某个工具里存在，但还没进真源。收进来才能统一管理。</p>
+        </div>
+        <div class="chip-row" id="orphanChips"></div>
+      </div>
+    </section>
+
+    <!-- 日志 -->
+    <section class="view" id="view-logs" hidden>
+      <div class="table-wrap">
+        <table class="grid log-table">
+          <thead><tr><th>时间</th><th>动作</th><th>说明</th><th>结果</th></tr></thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

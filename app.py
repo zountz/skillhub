@@ -1,0 +1,128 @@
+"""SkillHub 桌面端入口.
+
+    python app.py              正常启动
+    python app.py --selftest   无窗口自检: 加载界面 -> 检查 DOM -> 打印结果 -> 退出
+"""
+
+from __future__ import annotations
+
+import sys
+import time
+import traceback
+
+import webview
+
+from skillhub.api import Bridge
+from skillhub.paths import UI_DIR, ensure_dirs
+
+
+def run_selftest(window: webview.Window) -> None:
+    """窗口起来后跑一段 JS, 验证界面与桥接都活着."""
+    time.sleep(2.5)
+    checks = {
+        "title": "document.title",
+        "navItems": "document.querySelectorAll('.nav-item').length",
+        "skillRows": "document.querySelectorAll('#skillTable tbody tr').length",
+        "mcpRows": "document.querySelectorAll('#mcpTable tbody tr').length",
+        "agentCards": "document.querySelectorAll('.agent-card').length",
+        "healthItems": "document.querySelectorAll('.health-item').length",
+        "pageSub": "document.getElementById('pageSub').textContent",
+        "toast": "document.getElementById('toast').className",
+        "jsError": "window.__lastError || ''",
+    }
+    ok = True
+    print("\n===== SkillHub 自检 =====")
+    for name, js in checks.items():
+        try:
+            val = window.evaluate_js(js)
+        except Exception as exc:
+            val = f"<求值失败: {exc}>"
+            ok = False
+        print(f"  {name:12} = {val}")
+
+    # 检查有没有渲染出空表格(通常意味着 bridge 报错)
+    try:
+        empty = window.evaluate_js("document.querySelectorAll('.empty').length")
+        sub = window.evaluate_js("document.getElementById('pageSub').textContent")
+        if "失败" in str(sub):
+            print("  ! 界面报告初始化失败:", sub)
+            ok = False
+        print(f"  emptyBlocks  = {empty}")
+    except Exception:
+        ok = False
+
+    print("===== 自检结束:", "通过" if ok else "有问题", "=====\n")
+    window.destroy()
+
+
+def run_shot(window: webview.Window) -> None:
+    """把窗口置顶后截屏, 用于开发期核对视觉效果."""
+    import tempfile
+    from pathlib import Path
+
+    time.sleep(2.5)
+    try:
+        window.show()
+        window.restore()
+        window.maximize()
+        window.on_top = True
+    except Exception as exc:
+        print(f"窗口调整失败: {exc}")
+    time.sleep(1.2)
+    try:
+        print(
+            f"窗口几何: x={window.x} y={window.y} w={window.width} h={window.height} "
+            f"on_top={getattr(window, 'on_top', '?')}"
+        )
+    except Exception as exc:
+        print(f"读取几何失败: {exc}")
+    try:
+        from PIL import ImageGrab
+
+        for view in ("overview", "skills", "mcp"):
+            try:
+                window.evaluate_js(
+                    f"document.querySelector('.nav-item[data-view=\"{view}\"]').click()"
+                )
+            except Exception as exc:
+                print(f"切换 {view} 失败: {exc}")
+            time.sleep(0.9)
+            out = Path(tempfile.gettempdir()) / f"skillhub-{view}.png"
+            ImageGrab.grab().save(out)
+            print(f"SHOT[{view}]: {out}")
+    except Exception as exc:
+        print(f"截图失败: {exc}")
+    time.sleep(0.5)
+    window.destroy()
+
+
+def main() -> int:
+    ensure_dirs()
+    selftest = "--selftest" in sys.argv
+    shot = "--shot" in sys.argv
+
+    try:
+        window = webview.create_window(
+            "SkillHub",
+            url=str(UI_DIR / "index.html"),
+            js_api=Bridge(),
+            width=1220,
+            height=800,
+            min_size=(980, 640),
+            background_color="#f6f6f4",
+            hidden=selftest,
+        )
+        if selftest:
+            webview.start(run_selftest, args=(window,), debug=False)
+        elif shot:
+            webview.start(run_shot, args=(window,), debug=False)
+        else:
+            webview.start(debug=False)
+        return 0
+    except Exception:
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
