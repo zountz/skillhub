@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from . import settings
-from .paths import AGENTS, BACKUP_DIR, SKILLS_SOURCE, Agent, is_windows, short
+from .paths import AGENTS, BACKUP_DIR, NO_WINDOW, SKILLS_SOURCE, Agent, is_windows, short
 from .safeio import log_action
 
 LINKED, COPY, MISSING, BROKEN, FOREIGN = "linked", "copy", "missing", "broken", "foreign"
@@ -212,6 +212,7 @@ def _create_junction(link: Path, target: Path) -> tuple[bool, str]:
             r = subprocess.run(
                 ["cmd", "/c", "mklink", "/J", str(link), str(target)],
                 capture_output=True,
+                creationflags=NO_WINDOW,  # 否则每次建链都闪一个黑框
             )
             if r.returncode == 0 and os.path.lexists(link):
                 return True, "junction"

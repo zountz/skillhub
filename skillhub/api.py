@@ -14,7 +14,7 @@ import traceback
 from typing import Any, Callable
 
 from . import __version__, mcp, settings, skills
-from .paths import AGENTS, BACKUP_DIR, MCP_MANIFEST, SKILLS_SOURCE, Agent, ensure_dirs, short
+from .paths import AGENTS, BACKUP_DIR, MCP_MANIFEST, NO_WINDOW, SKILLS_SOURCE, Agent, ensure_dirs, short
 from .safeio import log_action, recent_actions
 
 
@@ -304,7 +304,7 @@ class Bridge:
         ag = skills_agent(agent_key)
         if not ag.mcp_path.exists():
             return {"ok": False, "message": "该配置文件还不存在"}
-        subprocess.Popen(["explorer", "/select,", str(ag.mcp_path)])
+        subprocess.Popen(["explorer", "/select,", str(ag.mcp_path)], creationflags=NO_WINDOW)
         return {"ok": True, "message": "已在资源管理器中定位"}
 
 

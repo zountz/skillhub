@@ -6,10 +6,16 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 HOME = Path.home()
+
+#: 建链接要调一次 cmd。本程序由 pythonw 启动(自身没有控制台), Windows 会给
+#: 子进程新建一个控制台窗口 —— 那就是操作时一闪而过的黑框。
+#: CREATE_NO_WINDOW 让它根本不出现。非 Windows 上必须为 0。
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 # ---- 项目自身路径 ----------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
