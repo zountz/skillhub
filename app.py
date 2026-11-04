@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import traceback
@@ -58,6 +59,10 @@ def run_selftest(window: webview.Window) -> None:
 
     print("===== 自检结束:", "通过" if ok else "有问题", "=====\n")
     window.destroy()
+    # destroy 之后 webview 循环偶尔不肯收尾, 进程挂在那儿占着窗口 —— 直接走.
+    # 必须先 flush: os._exit 不刷缓冲区, 否则自检结果一行都看不到.
+    sys.stdout.flush()
+    os._exit(0)
 
 
 def run_shot(window: webview.Window) -> None:
@@ -159,6 +164,8 @@ def run_shot(window: webview.Window) -> None:
         print(f"截图失败: {exc}")
     time.sleep(0.5)
     window.destroy()
+    sys.stdout.flush()
+    os._exit(0)
 
 
 def main() -> int:
