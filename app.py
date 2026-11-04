@@ -12,6 +12,7 @@ import traceback
 
 import webview
 
+from skillhub import api
 from skillhub.api import Bridge
 from skillhub.paths import UI_DIR, ensure_dirs
 
@@ -161,16 +162,19 @@ def main() -> int:
     shot = "--shot" in sys.argv
 
     try:
+        bridge = Bridge()
         window = webview.create_window(
             "SkillHub",
             url=str(UI_DIR / "index.html"),
-            js_api=Bridge(),
+            js_api=bridge,
             width=1220,
             height=800,
             min_size=(980, 640),
             background_color="#f6f6f4",
             hidden=selftest,
         )
+        # 目录选择框要用窗口对象(create_file_dialog), 创建完再回填
+        api.set_window(window)
         if selftest:
             webview.start(run_selftest, args=(window,), debug=False)
         elif shot:

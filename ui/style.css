@@ -356,6 +356,8 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
 .path-input:focus { outline: none; border-color: var(--accent); }
 .path-input::placeholder { color: var(--ink-3); }
 .path-table .col-name { width: 270px; }
+.path-cell { display: flex; align-items: center; gap: 9px; }
+.path-cell .path-input { flex: 1; min-width: 0; }
 .path-banner {
   margin-bottom: 14px; padding: 10px 14px; border-radius: var(--r);
   background: var(--warn-bg); color: var(--warn);

@@ -31,6 +31,17 @@ def _wrap(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
     return inner
 
 
+#: 由 app.py 在窗口创建后回填 —— 目录选择框要用窗口对象.
+#: 不挂在 Bridge 上当属性: pywebview 会把 js_api 对象的成员逐个反射暴露给
+#: 前端, 塞一个非方法的 window 进去会让它卡在序列化上。
+_WINDOW: Any = None
+
+
+def set_window(win: Any) -> None:
+    global _WINDOW
+    _WINDOW = win
+
+
 class Bridge:
     """前端可调用的全部能力."""
 
@@ -308,19 +319,32 @@ class Bridge:
 
     @_wrap
     def pick_dir(self, current: str = "") -> dict[str, Any]:
-        """弹系统目录选择框. 取消了就返回空字符串."""
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
+        """弹系统目录选择框, 返回选中路径(取消则空).
 
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            picked = filedialog.askdirectory(initialdir=current or str(paths.HOME))
-            root.destroy()
+        用 pywebview 自己的 FOLDER_DIALOG: 它在 webview 的 GUI 线程上跑,
+        不用另起 tkinter —— 在非主线程里创建 Tk() 有死锁风险。
+        """
+        win = _WINDOW
+        if win is None:
+            return {"path": "", "message": "窗口还没就绪，请直接粘贴路径"}
+        try:
+            import webview as _wv
+
+            # 新版用 FileDialog.FOLDER, 老版是模块级 FOLDER_DIALOG(20)
+            kind = getattr(getattr(_wv, "FileDialog", None), "FOLDER", None) or _wv.FOLDER_DIALOG
+            picked = win.create_file_dialog(kind, directory=current or str(paths.HOME))
         except Exception as exc:
-            return {"path": "", "message": f"系统选择框不可用，请直接粘贴路径（{exc}）"}
-        return {"path": picked or "", "message": ""}
+            return {"path": "", "message": f"打不开选择框，请直接粘贴路径（{exc}）"}
+        return {"path": (picked[0] if picked else ""), "message": ""}
+
+    @_wrap
+    def detect_paths(self) -> dict[str, Any]:
+        """重新探测一遍: 不看启动时的缓存, 也不看手填值.
+
+        装了新工具、改了环境变量之后, 点一下就能看到现在的真实情况,
+        不必为了"看看检测到没有"而重启。
+        """
+        return {"agents": paths.detect_now(), "source": paths.locations_snapshot()["default_source"]}
 
     # ---------------- 杂项 ----------------
     @_wrap

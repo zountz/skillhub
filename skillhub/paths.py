@@ -161,6 +161,14 @@ def _pick_root(spec: LocationSpec, override: dict[str, Any]) -> Path:
     return cands[0] if cands else HOME
 
 
+def _mcp_for(spec: LocationSpec, root: Path, override_mcp: str = "") -> Path:
+    if override_mcp:
+        return resolve(override_mcp)
+    default_root = resolve(spec.roots[0]) if spec.roots else HOME
+    tpl = spec.mcp_path_moved if (spec.mcp_path_moved and root != default_root) else spec.mcp_path
+    return resolve(tpl.format(root=root.as_posix(), home=HOME.as_posix()))
+
+
 def _build() -> tuple[Path, tuple[Agent, ...]]:
     ov = read_locations()
     source = resolve(ov.get("skills_source") or DEFAULT_SOURCE)
@@ -171,12 +179,7 @@ def _build() -> tuple[Path, tuple[Agent, ...]]:
         o = over.get(spec.key) or {}
         root = _pick_root(spec, o)
         skills = resolve(o["skills_dir"]) if o.get("skills_dir") else root / spec.skills_rel
-        if o.get("mcp_path"):
-            mcp = resolve(o["mcp_path"])
-        else:
-            default_root = resolve(spec.roots[0]) if spec.roots else HOME
-            tpl = spec.mcp_path_moved if (spec.mcp_path_moved and root != default_root) else spec.mcp_path
-            mcp = resolve(tpl.format(root=root.as_posix(), home=HOME.as_posix()))
+        mcp = _mcp_for(spec, root, o.get("mcp_path") or "")
         out.append(
             Agent(
                 key=spec.key,
@@ -203,32 +206,63 @@ def agent(key: str) -> Agent:
 # --------------------------------------------------------------------------- #
 # 给界面看的快照 / 保存
 # --------------------------------------------------------------------------- #
+def detect_now() -> list[dict[str, Any]]:
+    """现场重探测: 只看环境变量与默认候选, 忽略手填值.
+
+    界面上"自动检测"按钮用它 —— 装了新工具或改了环境变量后立刻能看到,
+    不用为了"检测到没有"重启一次。
+    """
+    out = []
+    for spec in SPECS:
+        root = _pick_root(spec, {})
+        skills = root / spec.skills_rel
+        mcp = _mcp_for(spec, root)
+        env_val = os.environ.get(spec.env_var, "") if spec.env_var else ""
+        out.append(
+            {
+                "key": spec.key,
+                "name": spec.name,
+                "root": str(root),
+                "skills_dir": str(skills),
+                "mcp_path": str(mcp),
+                "detected": root.exists(),
+                "skills_exists": skills.exists(),
+                "mcp_exists": mcp.exists(),
+                "env_var": spec.env_var,
+                "env_value": env_val,
+            }
+        )
+    return out
+
+
 def locations_snapshot() -> dict[str, Any]:
     """当前生效的位置 + 默认值 + 来源, 供界面展示与编辑."""
     ov = read_locations()
     agents_over = ov.get("agents") or {}
+    live = {d["key"]: d for d in detect_now()}
 
     rows = []
     for spec, ag in zip(SPECS, AGENTS):
         o = agents_over.get(spec.key) or {}
         env_val = os.environ.get(spec.env_var, "") if spec.env_var else ""
-        default_root = resolve(spec.roots[0]) if spec.roots else HOME
+        now = live.get(spec.key, {})
         rows.append(
             {
                 "key": spec.key,
                 "name": spec.name,
                 "skills_dir": str(ag.skills_dir),
                 "mcp_path": str(ag.mcp_path),
-                "default_skills": str(default_root / spec.skills_rel),
-                "default_mcp": str(
-                    resolve(spec.mcp_path.format(root=default_root.as_posix(), home=HOME.as_posix()))
-                ),
-                "env_var": spec.env_var,
-                "env_value": env_val,
+                # 默认值取"探测到的那个", 而不是写死的第一个候选 ——
+                # 否则 Qoder 只有 ~/.qoder 时, 占位符显示 ~/.qoder-cn, 与生效值不一致
+                "default_skills": now.get("skills_dir") or str(resolve(spec.roots[0]) / spec.skills_rel),
+                "default_mcp": now.get("mcp_path") or "",
                 "root": o.get("root", ""),
                 "overridden": bool(o.get("skills_dir") or o.get("mcp_path") or o.get("root")),
                 "skills_overridden": bool(o.get("skills_dir")),
                 "mcp_overridden": bool(o.get("mcp_path")),
+                "detected": bool(now.get("detected")),
+                "env_var": spec.env_var,
+                "env_value": env_val,
                 "skills_exists": ag.skills_dir.exists(),
                 "mcp_exists": ag.mcp_path.exists(),
                 "available": ag.available,

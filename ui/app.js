@@ -628,9 +628,12 @@ function pathRow(o) {
         <div class="skill-path">默认 ${esc(o.def)}${extra}</div>
       </td>
       <td>
-        <input class="path-input" spellcheck="false" autocomplete="off"
-          data-path-key="${escAttr(o.key)}" data-path-field="${escAttr(o.field)}"
-          value="${escAttr(o.value)}" placeholder="${escAttr(o.def)}">
+        <div class="path-cell">
+          <input class="path-input" spellcheck="false" autocomplete="off"
+            data-path-key="${escAttr(o.key)}" data-path-field="${escAttr(o.field)}"
+            value="${escAttr(o.value)}" placeholder="${escAttr(o.def)}">
+          <button class="mini-btn" data-pick="1" title="打开系统目录选择框">浏览</button>
+        </div>
       </td>
       <td class="col-op">${chip}</td>
     </tr>`;
@@ -706,6 +709,22 @@ el('btnPathReset').addEventListener('click', () => {
   toast('已清空，点「保存」后全部回到自动探测的默认值');
 });
 
+/* 自动检测: 现场重探环境变量与默认目录, 不重启也能看到现在装了哪些 */
+el('btnPathDetect').addEventListener('click', (e) =>
+  busy(e.target, async () => {
+    const r = await call('detect_paths');
+    LOC = null;
+    await renderPaths(true);
+    const hit = r.agents.filter((a) => a.detected).length;
+    const miss = r.agents.filter((a) => !a.detected).map((a) => a.name);
+    toast(
+      miss.length
+        ? `检测到 ${hit}/${r.agents.length} 个工具，没找到：${miss.join('、')}`
+        : `四个工具全部检测到`
+    );
+  })
+);
+
 /* ---------------------------------------------------------------- 交互 */
 async function refresh() {
   const data = await call('refresh');
@@ -718,12 +737,27 @@ async function refresh() {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target.closest(
-    '[data-view],[data-skill],[data-mcp],[data-adopt],[data-adoptmcp],[data-fixskill],[data-mcpglobal],[data-openpath],[data-open],[data-delskill],[data-delunmanaged],[data-delmcp],[data-delmcporphan]'
+    '[data-view],[data-skill],[data-mcp],[data-adopt],[data-adoptmcp],[data-fixskill],[data-mcpglobal],[data-openpath],[data-open],[data-delskill],[data-delunmanaged],[data-delmcp],[data-delmcporphan],[data-pick]'
   );
   if (!t) return;
 
   // 导航
   if (t.dataset.view) return setView(t.dataset.view);
+
+  // 目录选择框
+  if (t.dataset.pick) {
+    const holder = t.parentElement;
+    const inp = holder ? holder.querySelector('.path-input') : null;
+    return busy(t, async () => {
+      const r = await call('pick_dir', inp ? inp.value.trim() : '');
+      if (r.path && inp) {
+        inp.value = r.path;
+        toast('已选择，点「保存」后生效');
+      } else if (r.message) {
+        toast(r.message, true);
+      }
+    });
+  }
 
   if (t.dataset.open) {
     return busy(null, async () => {
