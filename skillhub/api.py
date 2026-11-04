@@ -97,6 +97,11 @@ class Bridge:
         return {"ok": r.ok, "message": r.message}
 
     @_wrap
+    def skill_detail(self, name: str) -> dict[str, Any]:
+        """完整介绍: frontmatter + 正文 + 文件清单 + 各工具状态."""
+        return skills.detail(name)
+
+    @_wrap
     def adopt_skill(self, agent_key: str, name: str) -> dict[str, Any]:
         r = skills.adopt_skill(skills_agent(agent_key), name)
         return {"ok": r.ok, "message": r.message}
@@ -169,6 +174,17 @@ class Bridge:
     @_wrap
     def mcp_sync(self, targets: list[str] | None = None) -> dict[str, Any]:
         return {"results": mcp.sync_mcp(targets)}
+
+    @_wrap
+    def mcp_detail(self, name: str) -> dict[str, Any]:
+        """完整说明: 定义 + 各工具现状 + 备注."""
+        return mcp.server_detail(name)
+
+    @_wrap
+    def mcp_set_note(self, name: str, note: str) -> dict[str, Any]:
+        """备注只存在 manifest 里, 不写进任何工具配置."""
+        mcp.set_note(name, note)
+        return {"ok": True, "message": "备注已保存" if note.strip() else "备注已清空"}
 
     @_wrap
     def mcp_import(self) -> dict[str, Any]:

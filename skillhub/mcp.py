@@ -275,6 +275,68 @@ def _update_toml_table(table: Any, conf: dict[str, Any]) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 详情 / 备注
+# --------------------------------------------------------------------------- #
+#: key 名里带这些词的环境变量, 值一律遮住 —— 详情面板会被截屏分享
+_SECRET_HINTS = ("token", "key", "secret", "password", "passwd", "auth", "cookie", "credential")
+
+
+def _masked_env(env: dict[str, Any] | None) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for k, v in (env or {}).items():
+        s = str(v)
+        hidden = any(h in str(k).lower() for h in _SECRET_HINTS)
+        out.append(
+            {
+                "key": str(k),
+                "value": "•" * min(max(len(s), 6), 12) if hidden else s,
+                "hidden": hidden,
+                "length": len(s),
+            }
+        )
+    return out
+
+
+def server_detail(name: str) -> dict[str, Any]:
+    """一个 MCP 服务的完整说明: 定义 + 各工具现状 + 用户备注."""
+    man = load_manifest()
+    spec = man["servers"].get(name)
+    if spec is None:
+        raise KeyError(name)
+
+    row = next((r for r in scan_mcp()["rows"] if r["name"] == name), {})
+    return {
+        "name": name,
+        "note": spec.get("note") or "",
+        "command": spec.get("command") or "",
+        "url": spec.get("url") or "",
+        "args": [str(x) for x in (spec.get("args") or [])],
+        "env": _masked_env(spec.get("env")),
+        "disabled": bool(spec.get("disabled")),
+        "disable_in": spec.get("disable_in") or [],
+        "targets": row.get("targets") or [a.key for a in AGENTS],
+        "states": row.get("states") or {},
+        "manifest": short(MCP_MANIFEST),
+        "paths": [{"key": a.key, "name": a.name, "path": short(a.mcp_path), "format": a.mcp_format} for a in AGENTS],
+    }
+
+
+def set_note(name: str, note: str) -> None:
+    """写/清备注. note 是 manifest 专属元字段, 不会写进任何工具配置."""
+    man = load_manifest()
+    spec = man["servers"].get(name)
+    if spec is None:
+        raise KeyError(name)
+    note = (note or "").strip()
+    if note:
+        spec["note"] = note
+    else:
+        spec.pop("note", None)
+    save_manifest(man)
+    log_action("mcp_note", f"{name}: {'写入备注' if note else '清空备注'}")
+
+
+# --------------------------------------------------------------------------- #
 # 同步
 # --------------------------------------------------------------------------- #
 def _is_off_for(ag: Agent, spec: dict[str, Any]) -> bool:
@@ -345,6 +407,7 @@ def scan_mcp() -> dict[str, Any]:
                 "disabled": bool(spec.get("disabled")),
                 "targets": spec.get("targets") or [a.key for a in AGENTS],
                 "states": states,
+                "note": spec.get("note") or "",
                 "spec": _clean(spec),
             }
         )
@@ -361,7 +424,14 @@ def scan_mcp() -> dict[str, Any]:
                 continue
             seen.add(key)
             holders = [a.key for a in AGENTS if name in per_agent[a.key]]
-            orphans.append({"name": name, "agents": holders})
+            first = per_agent[holders[0]].get(name, {}) if holders else {}
+            orphans.append(
+                {
+                    "name": name,
+                    "agents": holders,
+                    "command": first.get("command") or first.get("url") or "",
+                }
+            )
 
     return {
         "manifest": short(MCP_MANIFEST),

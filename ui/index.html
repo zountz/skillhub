@@ -133,6 +133,23 @@
   </main>
 </div>
 
+<div class="tip" id="tip"></div>
+
+<!-- 详情面板: 表格里装不下的东西都放这儿 -->
+<div class="modal" id="detail" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <header class="modal-head">
+      <div class="modal-titles">
+        <h2 id="detailTitle"></h2>
+        <p id="detailSub"></p>
+      </div>
+      <button class="mini-btn" data-close>关闭</button>
+    </header>
+    <div class="modal-body" id="detailBody"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script src="app.js"></script>
 </body>

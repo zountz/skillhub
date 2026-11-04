@@ -15,6 +15,16 @@ const el = (id) => document.getElementById(id);
 const esc = (s) =>
   String(s == null ? '' : s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
+/* 写进 HTML 属性里的文本: 除了转义, 还要把换行变成字符引用,
+   否则属性值里的裸换行会被解析器吃掉, 多行说明就挤成一行了。 */
+const escAttr = (s) => esc(s).replace(/\r?\n/g, '&#10;');
+
+/* 悬停只给一段"回忆钩子", 太长的说明会把整张表盖住, 全文留给详情面板 */
+const clip = (s, n = 240) => {
+  const t = String(s || '');
+  return t.length > n ? t.slice(0, n).trimEnd() + '…\n点开看全文' : t;
+};
+
 /* ---------------------------------------------------------------- 通信 */
 async function call(method, ...args) {
   if (!window.pywebview || !window.pywebview.api) throw new Error('桥接尚未就绪');
@@ -67,6 +77,181 @@ function armButton(btn, question, run) {
     }, 4500)
   );
 }
+
+/* ---------------------------------------------------------------- 悬停说明 */
+let tipTarget = null;
+let tipTimer = null;
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipTarget = null;
+  el('tip').classList.remove('show');
+}
+
+function placeTip(t) {
+  const box = el('tip');
+  const r = t.getBoundingClientRect();
+  let x = r.left;
+  let y = r.bottom + 8;
+  if (x + box.offsetWidth > window.innerWidth - 12) x = window.innerWidth - box.offsetWidth - 12;
+  if (y + box.offsetHeight > window.innerHeight - 12) y = r.top - box.offsetHeight - 8;
+  box.style.left = Math.max(12, Math.round(x)) + 'px';
+  box.style.top = Math.max(12, Math.round(y)) + 'px';
+}
+
+document.addEventListener('mouseover', (ev) => {
+  const t = ev.target.closest && ev.target.closest('[data-tip]');
+  if (!t || t === tipTarget) return;
+  clearTimeout(tipTimer);
+  tipTarget = t;
+  tipTimer = setTimeout(() => {
+    if (tipTarget !== t) return;
+    el('tip').textContent = t.dataset.tip;
+    placeTip(t); // 先定位再显示, 避免在错位置闪一下
+    el('tip').classList.add('show');
+  }, 220);
+});
+
+document.addEventListener('mouseout', (ev) => {
+  const t = ev.target.closest && ev.target.closest('[data-tip]');
+  if (!t) return;
+  if (ev.relatedTarget && t.contains(ev.relatedTarget)) return;
+  if (tipTarget === t) hideTip();
+});
+
+window.addEventListener('scroll', hideTip, true);
+
+/* ---------------------------------------------------------------- 详情面板 */
+const SIZE = (n) =>
+  n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B';
+
+function kv(pairs) {
+  const rows = pairs.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`);
+  return rows.length ? `<dl class="kv">${rows.join('')}</dl>` : '';
+}
+
+function stateGrid(states) {
+  return `<div class="state-grid">${AGENT_ORDER.map((k) => {
+    const st = states[k] || 'missing';
+    return `<div class="state-cell"><span>${esc(nameOf(k))}</span>
+      <span class="pill st-${st}">${esc((SKILL_LABEL[st] || MCP_LABEL[st] || st))}</span></div>`;
+  }).join('')}</div>`;
+}
+
+function closeDetail() {
+  el('detail').hidden = true;
+  el('detailBody').innerHTML = '';
+}
+
+async function openSkill(name) {
+  hideTip();
+  const d = await call('skill_detail', name);
+  el('detailTitle').textContent = d.display_name || d.name;
+  el('detailSub').textContent = [d.name, d.version ? 'v' + d.version : '', d.path].filter(Boolean).join(' · ');
+
+  const skip = new Set(['name', 'description', 'version']);
+  const extra = Object.entries(d.frontmatter || {}).filter(([k, v]) => !skip.has(k) && v);
+  const files = (d.files || [])
+    .map((f) => `<span class="file-chip" title="${escAttr(SIZE(f.size))}">${esc(f.path)}</span>`)
+    .join('');
+
+  el('detailBody').innerHTML = `
+    <div class="detail-sec">
+      <p class="detail-desc">${esc(d.description || '这个 skill 没写 description，看下面正文开头。')}</p>
+    </div>
+    <div class="detail-sec">
+      <h3>装在哪</h3>
+      ${stateGrid(d.states)}
+    </div>
+    <div class="detail-sec">
+      <h3>信息</h3>
+      ${kv([
+        ['体积', `${d.file_total} 个文件 · ${SIZE(d.size)}`],
+        ...extra.map(([k, v]) => [k, v]),
+        ['位置', d.path],
+      ])}
+    </div>
+    <div class="detail-sec">
+      <h3>目录内容 <span class="hint">${d.file_total} 个文件</span></h3>
+      <div class="file-list">${files || '<span class="hint">空</span>'}</div>
+    </div>
+    <div class="detail-sec">
+      <h3>SKILL.md <span class="hint">${d.body_truncated ? '只显示前 9000 字' : ''}</span></h3>
+      <pre class="doc">${esc(d.body || '（没有正文）')}</pre>
+    </div>`;
+  el('detail').hidden = false;
+}
+
+async function openMcp(name) {
+  hideTip();
+  const d = await call('mcp_detail', name);
+  el('detailTitle').textContent = d.name;
+  el('detailSub').textContent = [
+    d.disabled ? '已全局停用' : '',
+    '写进 ' + d.targets.map(nameOf).join('、'),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const cmd = [d.command, ...d.args].filter(Boolean).join(' ');
+  const env = d.env.length
+    ? `<dl class="kv">${d.env
+        .map(
+          (e) =>
+            `<dt>${esc(e.key)}</dt><dd><code>${esc(e.value)}</code>${
+              e.hidden ? ' <span class="hint">已遮住</span>' : ''
+            }</dd>`
+        )
+        .join('')}</dl>`
+    : '<div class="hint">没有环境变量</div>';
+
+  el('detailBody').innerHTML = `
+    <div class="detail-sec">
+      <h3>备注 <span class="hint">只存在真源里，不会写进各工具配置</span></h3>
+      <textarea class="note-input" id="noteInput" placeholder="记一句它是干什么的，比如：连公司内网的 Postgres">${esc(
+        d.note
+      )}</textarea>
+      <div class="note-foot"><button class="btn primary" data-savenote="${escAttr(d.name)}">保存备注</button></div>
+    </div>
+    <div class="detail-sec">
+      <h3>启动命令</h3>
+      <pre class="doc">${esc(cmd || d.url || '（没有 command）')}</pre>
+    </div>
+    <div class="detail-sec">
+      <h3>环境变量 <span class="hint">${d.env.length} 个</span></h3>
+      ${env}
+    </div>
+    <div class="detail-sec">
+      <h3>各工具</h3>
+      ${stateGrid(d.states)}
+    </div>
+    <div class="detail-sec">
+      <h3>真源</h3>
+      ${kv([['文件', d.manifest]])}
+    </div>`;
+  el('detail').hidden = false;
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest && ev.target.closest('[data-close],[data-skillinfo],[data-mcpinfo],[data-savenote]');
+  if (!t) return;
+  if (t.hasAttribute('data-close')) return closeDetail();
+  if (t.dataset.skillinfo) return busy(null, () => openSkill(t.dataset.skillinfo).catch((e) => toast(e.message, true)));
+  if (t.dataset.mcpinfo) return busy(null, () => openMcp(t.dataset.mcpinfo).catch((e) => toast(e.message, true)));
+  if (t.dataset.savenote) {
+    const input = el('noteInput');
+    if (!input) return;
+    return busy(t, async () => {
+      const r = await call('mcp_set_note', t.dataset.savenote, input.value);
+      toast(r.message);
+      await refresh();
+    });
+  }
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && !el('detail').hidden) closeDetail();
+});
 
 /* ---------------------------------------------------------------- 加载 */
 async function loadAll() {
@@ -243,7 +428,7 @@ function renderSkills() {
   const q = (el('skillSearch').value || '').trim().toLowerCase();
   const rows = sk.rows.filter((r) => !q || r.name.toLowerCase().includes(q) || (r.description || '').toLowerCase().includes(q));
 
-  el('skillNote').textContent = `共 ${sk.total} 个，真源 ${sk.sources_dir}`;
+  el('skillNote').textContent = `共 ${sk.total} 个，真源 ${sk.sources_dir} · 点名字看详情`;
 
   const tbody = el('skillTable').querySelector('tbody');
   if (!rows.length) {
@@ -272,7 +457,8 @@ function renderSkills() {
         return `
           <tr>
             <td>
-              <div class="skill-name">${esc(r.name)}${alias}</div>
+              <button class="skill-name link-name" data-skillinfo="${escAttr(r.name)}"
+                data-tip="${escAttr(clip(r.description) || '这个 skill 没写 description，点开看正文')}">${esc(r.name)}${alias}</button>
               ${r.description ? `<div class="skill-desc" title="${esc(r.description)}">${esc(r.description)}</div>` : ''}
             </td>
             ${cells}
@@ -290,7 +476,8 @@ function renderSkills() {
   if (sk.unmanaged.length) {
     panel.hidden = false;
     el('unmanagedGroups').innerHTML = groupByAgent(sk.unmanaged, sk.agents, (u, agentKey) =>
-      `<span class="chip">${esc(u.name)}
+      `<span class="chip"><button class="link-name" data-skillinfo="${escAttr(u.name)}"
+         data-tip="${escAttr(clip(u.description) || '这个 skill 没写 description，点开看正文')}">${esc(u.name)}</button>
          <button class="chip-btn" data-adopt="${esc(u.name)}" data-agent="${agentKey}" title="收进真源, 之后所有平台共享">收进真源</button>
          <button class="chip-btn" data-delunmanaged="${esc(u.name)}" title="从各工具清掉, 内容移入备份区">删除</button>
        </span>`
@@ -345,10 +532,17 @@ function groupByAgent(items, agents, makeChip) {
 /* ---------------------------------------------------------------- MCP */
 const MCP_LABEL = { synced: '已同步', drift: '有差异', missing: '未写入', excluded: '未启用', disabled: '已关闭', unavailable: '未安装' };
 
+/* MCP 没有 SKILL.md 那样的自述，只能靠备注 + 命令行两样东西回忆 */
+function mcpTip(r) {
+  const cmd = [r.command, ...(r.args || [])].filter(Boolean).join(' ');
+  const head = r.note || '还没有备注 · 点开写一句它是干什么的';
+  return clip([head, cmd].filter(Boolean).join('\n'), 300);
+}
+
 function renderMcp() {
   const mc = STATE.mcp;
   if (!mc) return;
-  el('mcpNote').textContent = `共 ${mc.total} 个，来自 ${mc.manifest} · 点击格子可切换该工具是否启用`;
+  el('mcpNote').textContent = `共 ${mc.total} 个，来自 ${mc.manifest} · 点格子切换启用，点名字看详情`;
 
   const tbody = el('mcpTable').querySelector('tbody');
   if (!mc.rows.length) {
@@ -376,7 +570,8 @@ function renderMcp() {
         return `
           <tr>
             <td>
-              <div class="skill-name">${esc(r.name)}</div>
+              <button class="skill-name link-name" data-mcpinfo="${escAttr(r.name)}"
+                data-tip="${escAttr(mcpTip(r))}">${esc(r.name)}</button>
               <div class="skill-path" title="${esc(r.command)}">${esc(cmd || r.command)} ${esc((r.args || []).slice(0, 2).join(' '))}</div>
             </td>
             ${cells}
@@ -393,7 +588,7 @@ function renderMcp() {
   if (mc.orphans.length) {
     panel.hidden = false;
     el('orphanGroups').innerHTML = groupByAgent(mc.orphans, mc.agents, (o, agentKey) =>
-      `<span class="chip">${esc(o.name)}
+      `<span class="chip"><span class="chip-name" data-tip="${escAttr(clip(o.command, 300))}">${esc(o.name)}</span>
          <button class="chip-btn" data-adoptmcp="${esc(o.name)}" data-agents="${agentKey}" title="收进真源">收进真源</button>
          <button class="chip-btn" data-delmcporphan="${esc(o.name)}" title="从各工具配置里删掉, 不进真源">删除</button>
        </span>`

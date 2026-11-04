@@ -30,6 +30,8 @@ def run_selftest(window: webview.Window) -> None:
         "syncAllBtn": "document.getElementById('btnSyncAll') ? document.getElementById('btnSyncAll').textContent : '<缺失>'",
         "pageSub": "document.getElementById('pageSub').textContent",
         "toast": "document.getElementById('toast').className",
+        "tipEl": "!!document.getElementById('tip')",
+        "detailEl": "!!document.getElementById('detail')",
         "jsError": "window.__lastError || ''",
     }
     ok = True
@@ -116,6 +118,37 @@ def run_shot(window: webview.Window) -> None:
             print(f"SHOT[delconfirm]: {out}")
         except Exception as exc:
             print(f"删除确认态截图失败: {exc}")
+
+        # 悬停说明
+        try:
+            window.evaluate_js(
+                "document.querySelector('[data-skillinfo]')"
+                ".dispatchEvent(new MouseEvent('mouseover', {bubbles: true}))"
+            )
+            time.sleep(0.8)
+            out = Path(tempfile.gettempdir()) / "skillhub-tip.png"
+            ImageGrab.grab().save(out)
+            print(f"SHOT[tip]: {out}")
+            window.evaluate_js("document.dispatchEvent(new MouseEvent('mousemove'))")
+        except Exception as exc:
+            print(f"悬停截图失败: {exc}")
+
+        # 详情面板
+        for view, sel, tag in (
+            ("skills", "[data-skillinfo]", "detail-skill"),
+            ("mcp", "[data-mcpinfo]", "detail-mcp"),
+        ):
+            try:
+                window.evaluate_js(f"document.querySelector('.nav-item[data-view=\"{view}\"]').click()")
+                time.sleep(0.5)
+                window.evaluate_js(f"document.querySelector('{sel}').click()")
+                time.sleep(1.0)
+                out = Path(tempfile.gettempdir()) / f"skillhub-{tag}.png"
+                ImageGrab.grab().save(out)
+                print(f"SHOT[{tag}]: {out}")
+                window.evaluate_js("document.querySelector('[data-close]').click()")
+            except Exception as exc:
+                print(f"{tag} 截图失败: {exc}")
     except Exception as exc:
         print(f"截图失败: {exc}")
     time.sleep(0.5)

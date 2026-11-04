@@ -279,6 +279,72 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
 .tag-ok { color: var(--ok); }
 .tag-fail { color: var(--bad); }
 
+/* ---------------- 悬停说明 ---------------- */
+.tip {
+  position: fixed; left: 0; top: 0; z-index: 60; max-width: 400px;
+  background: #23231f; color: #f4f3ee;
+  padding: 9px 12px; border-radius: var(--r);
+  font-size: 13px; line-height: 1.6; white-space: pre-line;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  opacity: 0; transform: translateY(-3px); pointer-events: none;
+  transition: opacity .12s ease, transform .12s ease;
+}
+.tip.show { opacity: 1; transform: none; }
+
+/* 可点开的名字: 平时就是普通文字, hover 才露出可点 */
+.link-name { padding: 0; background: none; border: none; color: var(--ink); text-align: left; }
+.link-name:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------------- 详情面板 ---------------- */
+.modal { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; }
+.modal[hidden] { display: none; }
+.modal-mask { position: absolute; inset: 0; background: rgba(22, 22, 20, .34); }
+.modal-card {
+  position: relative; width: min(780px, 92vw); max-height: 84vh;
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 9px; box-shadow: 0 24px 60px rgba(0, 0, 0, .24);
+}
+.modal-head { display: flex; gap: 16px; align-items: flex-start; padding: 17px 22px 13px; border-bottom: 1px solid var(--line); }
+.modal-titles { flex: 1; min-width: 0; }
+.modal-titles h2 { font-size: 17px; font-weight: 600; }
+.modal-titles p { margin-top: 3px; font-size: 11px; color: var(--ink-3); }
+.modal-body { padding: 18px 22px 24px; overflow: auto; }
+
+.detail-sec { margin-top: 20px; }
+.detail-sec:first-child { margin-top: 0; }
+.detail-sec h3 { margin-bottom: 8px; font-size: 13px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.detail-sec h3 .hint, .hint { font-size: 11px; font-weight: 400; color: var(--ink-3); }
+.detail-desc { font-size: 13px; line-height: 1.75; color: var(--ink-2); }
+
+.kv { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px 16px; font-size: 13px; }
+.kv dt { color: var(--ink-3); }
+.kv dd { color: var(--ink); word-break: break-all; }
+
+.state-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 22px; }
+.state-cell { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--ink-2); gap: 10px; }
+
+/* deslop-ignore-next-line 34 — 目录内容与文档正文用等宽, 便于辨认路径 */
+.doc {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 12px 14px; max-height: 320px; overflow: auto;
+  font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; line-height: 1.7;
+  color: var(--ink-2); white-space: pre-wrap; word-break: break-word;
+}
+.file-list { display: flex; flex-wrap: wrap; gap: 6px; }
+/* deslop-ignore-next-line 34 — 文件名等宽便于竖排对齐 */
+.file-chip {
+  font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; color: var(--ink-2);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 7px;
+}
+.note-input {
+  width: 100%; min-height: 62px; resize: vertical; font: inherit; font-size: 13px;
+  padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--r);
+  background: var(--surface); color: var(--ink);
+}
+.note-input:focus { outline: none; border-color: var(--accent); }
+.note-foot { margin-top: 9px; display: flex; justify-content: flex-end; }
+
 /* ---------------- 提示 ---------------- */
 .toast {
   position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(12px);

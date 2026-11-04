@@ -467,6 +467,96 @@ def delete_unmanaged(name: str) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# 详情: 界面上"这东西到底是干嘛的"
+# --------------------------------------------------------------------------- #
+MAX_BODY = 9000
+MAX_FILES = 80
+
+
+def _strip_front(text: str) -> str:
+    """去掉 frontmatter, 只留正文."""
+    if not text.startswith("---"):
+        return text
+    lines = text.splitlines()
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            return "\n".join(lines[i + 1 :]).lstrip("\n")
+    return text
+
+
+def _walk_files(root: Path) -> tuple[list[dict[str, Any]], int, int]:
+    """相对路径清单 + 总字节 + 文件总数. 遇到链接一概不进, 免得被 junction 带出真源."""
+    out: list[dict[str, Any]] = []
+    total = 0
+    count = 0
+    for cur, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if not _is_link(Path(cur) / d))
+        for fn in sorted(files):
+            fp = Path(cur) / fn
+            try:
+                sz = fp.stat().st_size
+            except OSError:
+                sz = 0
+            total += sz
+            count += 1
+            if len(out) < MAX_FILES:
+                out.append({"path": fp.relative_to(root).as_posix(), "size": sz})
+    return out, total, count
+
+
+def detail(name: str) -> dict[str, Any]:
+    """一个 skill 的完整介绍.
+
+    表格里 description 被截成一行, 往往不够看出它是干什么的 ——
+    正文开头几段和 frontmatter 里的 author/license 才是回忆的线索.
+    """
+    src = SKILLS_SOURCE / name
+    if not src.is_dir():
+        # 未纳管的: 落到第一个持有它的工具目录里, 同样能看介绍
+        for ag in AGENTS:
+            cand = ag.skills_dir / name
+            if cand.is_dir():
+                src = cand
+                break
+        else:
+            raise FileNotFoundError(f"找不到 {name}")
+
+    meta = read_meta(src)
+    front: dict[str, str] = {}
+    body = ""
+    md = src / "SKILL.md"
+    if not md.exists():
+        for cand in ("skill.md", "README.md", "readme.md"):
+            alt = src / cand
+            if alt.exists():
+                md = alt
+                break
+    if md.exists():
+        try:
+            text = md.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        front = _parse_frontmatter(text)
+        body = _strip_front(text)
+
+    files, size, count = _walk_files(src)
+    return {
+        "name": name,
+        "display_name": meta.display_name or name,
+        "description": meta.description,
+        "version": meta.version,
+        "path": short(src),
+        "frontmatter": front,
+        "body": body[:MAX_BODY],
+        "body_truncated": len(body) > MAX_BODY,
+        "files": files,
+        "file_total": count,
+        "size": size,
+        "states": {ag.key: probe(ag.skills_dir / name, src) for ag in AGENTS},
+    }
+
+
+# --------------------------------------------------------------------------- #
 # 扫描
 # --------------------------------------------------------------------------- #
 def list_sources() -> list[SkillMeta]:
@@ -542,7 +632,14 @@ def scan() -> dict[str, Any]:
                 continue
             seen.add(nm)
             holders = [a.key for a in AGENTS if nm in per_agent_entries[a.key]]
-            unmanaged.append({"name": nm, "agents": holders, "description": ""})
+            # 未纳管的也要能看介绍, 顺手把描述读出来(每个只有几 KB, 忽略不计)
+            desc = ""
+            for a in AGENTS:
+                if nm in per_agent_entries[a.key]:
+                    desc = read_meta(a.skills_dir / nm).description
+                    if desc:
+                        break
+            unmanaged.append({"name": nm, "agents": holders, "description": desc})
 
     return {
         "sources_dir": short(SKILLS_SOURCE),
