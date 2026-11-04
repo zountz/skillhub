@@ -200,6 +200,13 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11.5px; }
 .dot-warn { color: var(--warn); }
 
 /* ---------------- 未纳管 ---------------- */
+.groups { display: flex; flex-direction: column; gap: 16px; }
+.group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.group-name { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.group-count {
+  font-size: 10.5px; color: var(--ink-3);
+  background: var(--mute-bg); border-radius: 9px; padding: 1px 7px;
+}
 .chip-row { display: flex; flex-wrap: wrap; gap: 7px; }
 .chip {
   display: inline-flex; align-items: center; gap: 7px;

@@ -229,20 +229,60 @@ function renderSkills() {
       .join('');
   }
 
-  // 未纳管
+  // 未纳管: 按平台分组, 每个 skill 只在自己所在的平台下出现
   const panel = el('unmanagedPanel');
   if (sk.unmanaged.length) {
     panel.hidden = false;
-    el('unmanagedChips').innerHTML = sk.unmanaged
-      .map(
-        (u) =>
-          `<span class="chip">${esc(u.name)}<span class="chip-owner">${u.agents.map(nameOf).join('/')}</span>
-             <button class="chip-btn" data-adopt="${esc(u.name)}" data-agent="${u.agents[0]}">收进真源</button></span>`
-      )
-      .join('');
+    el('unmanagedGroups').innerHTML = groupByAgent(sk.unmanaged, sk.agents, (u, agentKey) =>
+      `<span class="chip">${esc(u.name)}
+         <button class="chip-btn" data-adopt="${esc(u.name)}" data-agent="${agentKey}" title="收进真源, 之后所有平台共享">收进真源</button>
+       </span>`
+    );
   } else {
     panel.hidden = true;
   }
+}
+
+/** 按"归属哪些平台"分组.
+
+    同一项在多个平台都有时只出现一次, 归到「A + B」组里,
+    而不是在两个平台组里各出现一次 —— 否则同一项会有两个「收进真源」按钮,
+    点哪个效果一样, 看着像要收两次。
+ */
+function groupByAgent(items, agents, makeChip) {
+  const order = (agents || []).map((a) => a.key);
+  const buckets = new Map();
+
+  items.forEach((it) => {
+    const owners = order.filter((k) => (it.agents || []).includes(k));
+    if (!owners.length) return;
+    const key = owners.join('|');
+    if (!buckets.has(key)) buckets.set(key, { owners, list: [] });
+    buckets.get(key).list.push(it);
+  });
+
+  const groups = [...buckets.values()].sort((a, b) => {
+    const ai = order.indexOf(a.owners[0]);
+    const bi = order.indexOf(b.owners[0]);
+    if (ai !== bi) return ai - bi;
+    return b.owners.length - a.owners.length;
+  });
+  if (!groups.length) return '';
+
+  return groups
+    .map((g) => {
+      const title =
+        g.owners.length > 1 ? g.owners.map(nameOf).join(' + ') : '仅 ' + nameOf(g.owners[0]);
+      return `
+      <div class="group">
+        <div class="group-head">
+          <span class="group-name">${esc(title)}</span>
+          <span class="group-count">${g.list.length} 个</span>
+        </div>
+        <div class="chip-row">${g.list.map((it) => makeChip(it, g.owners[0])).join('')}</div>
+      </div>`;
+    })
+    .join('');
 }
 
 /* ---------------------------------------------------------------- MCP */
@@ -290,13 +330,11 @@ function renderMcp() {
   const panel = el('orphanPanel');
   if (mc.orphans.length) {
     panel.hidden = false;
-    el('orphanChips').innerHTML = mc.orphans
-      .map(
-        (o) =>
-          `<span class="chip">${esc(o.name)}<span class="chip-owner">${o.agents.map(nameOf).join('/')}</span>
-             <button class="chip-btn" data-adoptmcp="${esc(o.name)}" data-agents="${o.agents.join(',')}">收进真源</button></span>`
-      )
-      .join('');
+    el('orphanGroups').innerHTML = groupByAgent(mc.orphans, mc.agents, (o, agentKey) =>
+      `<span class="chip">${esc(o.name)}
+         <button class="chip-btn" data-adoptmcp="${esc(o.name)}" data-agents="${agentKey}" title="收进真源">收进真源</button>
+       </span>`
+    );
   } else {
     panel.hidden = true;
   }
