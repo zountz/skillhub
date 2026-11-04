@@ -166,6 +166,9 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
 .mini-btn { font-size: 11px; color: var(--accent); }
 /* deslop-ignore-next-line 09 — 链接 hover 用下划线 */
 .mini-btn:hover { text-decoration: underline; }
+/* 删除类按钮: 平时与普通小按钮同形, 第一次点后变红加粗, 提示"再点一下才真删" */
+.mini-btn.is-danger { color: var(--bad); font-weight: 600; }
+.col-op .mini-btn + .mini-btn { margin-left: 9px; }
 
 /* ---------------- 表格 ---------------- */
 .table-wrap { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: auto; }
@@ -180,7 +183,7 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
 .grid tbody tr:last-child td { border-bottom: none; }
 .grid tbody tr:hover { background: #fbfbfa; }
 .col-agent { width: 116px; }
-.col-op { width: 78px; text-align: right; }
+.col-op { width: 118px; text-align: right; white-space: nowrap; }
 .col-name { min-width: 200px; }
 
 .skill-name { font-weight: 550; font-size: 13px; }
@@ -239,6 +242,8 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
 .chip-owner { color: var(--ink-3); font-size: 11px; }
 .chip-btn { font-size: 11px; color: var(--accent); padding: 1px 7px; border-radius: 9px; }
 .chip-btn:hover { background: var(--accent-soft); }
+.chip-btn.is-danger { color: var(--bad); font-weight: 600; }
+.chip-btn.is-danger:hover { background: var(--bad-bg); }
 
 /* ---------------- 面板 ---------------- */
 .panel { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 15px 16px; margin-top: 16px; }

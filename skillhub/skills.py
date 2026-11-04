@@ -359,6 +359,114 @@ def adopt_skill(ag: Agent, name: str) -> OpResult:
 
 
 # --------------------------------------------------------------------------- #
+# 删除
+# --------------------------------------------------------------------------- #
+def _stash_source(name: str) -> Path:
+    """把真源目录整块搬进备份区, 返回备份路径. 失败抛 OSError."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest_dir = BACKUP_DIR / "source"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{name}_{stamp}"
+    i = 1
+    while dest.exists():
+        dest = dest_dir / f"{name}_{stamp}_{i}"
+        i += 1
+    shutil.move(str(SKILLS_SOURCE / name), str(dest))
+    return dest
+
+
+def delete_skill(name: str, also_agents: list[str] | None = None) -> dict[str, Any]:
+    """从真源删除一个 skill, 并清理各工具里指向它的链接.
+
+    顺序是刻意的: 先把真源**整目录搬进备份区**(纯移动, 可逆), 成功了才动各工具.
+    反过来先拆链接再搬真源, 一旦搬失败就只剩"哪都没有"的烂摊子.
+
+    副本(copy)默认保留 —— 它可能是用户改过、真源里没有的唯一版本,
+    不能因为"删真源"就顺手连坐. 只有点名列进 also_agents 的工具才一并搬进备份区.
+    """
+    src = SKILLS_SOURCE / name
+    also = set(also_agents or [])
+    empty = {"unlinked": [], "removed": [], "kept": [], "failed": []}
+    if not src.exists():
+        return {"ok": False, "message": f"真源里没有 {name}", **empty}
+
+    try:
+        dest = _stash_source(name)
+    except OSError as exc:
+        return {"ok": False, "message": f"备份真源失败, 未做任何改动: {exc}", **empty}
+
+    unlinked: list[dict[str, Any]] = []
+    removed: list[dict[str, Any]] = []
+    kept: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    for ag in AGENTS:
+        entry = ag.skills_dir / name
+        if not os.path.lexists(entry):
+            continue
+        if _is_link(entry):
+            # 真源已经搬走, probe 会判成 broken, unlink_skill 只删链接本身
+            r = unlink_skill(ag, name)
+            (unlinked if r.ok else failed).append({"agent": ag.key, "name": ag.name, "message": r.message})
+        elif ag.key in also:
+            stashed = _stash_existing(entry, ag.key, name)
+            removed.append({"agent": ag.key, "name": ag.name, "backup": short(stashed) if stashed else ""})
+        else:
+            kept.append({"agent": ag.key, "name": ag.name})
+
+    log_action(
+        "delete_skill",
+        f"{name}: 备份到 {short(dest)}, 拆链 {len(unlinked)} 处, 保留副本 {len(kept)} 处",
+        ok=not failed,
+    )
+    msg = f"已删除 {name}，真源备份在 {short(dest)}"
+    if unlinked:
+        msg += f"，拆掉 {len(unlinked)} 处链接"
+    if removed:
+        msg += f"，清理 {len(removed)} 处副本"
+    if kept:
+        msg += f"，{len(kept)} 处副本保留未动"
+    if failed:
+        msg += f"，{len(failed)} 处失败"
+    return {
+        "ok": True,
+        "message": msg,
+        "backup": short(dest),
+        "backup_path": str(dest),
+        "unlinked": unlinked,
+        "removed": removed,
+        "kept": kept,
+        "failed": failed,
+    }
+
+
+def delete_unmanaged(name: str) -> dict[str, Any]:
+    """清掉未纳管的 skill: 各工具里的副本搬进备份区, 外部链接直接拆.
+
+    真源里没有它, 所以没有"删真源"这一步 —— 纯粹是清理, 全部可恢复.
+    """
+    if (SKILLS_SOURCE / name).exists():
+        return {"ok": False, "message": f"{name} 在真源里, 请用删除真源", "removed": [], "failed": []}
+
+    removed: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for ag in AGENTS:
+        entry = ag.skills_dir / name
+        if not os.path.lexists(entry):
+            continue
+        r = unlink_skill(ag, name)
+        (removed if r.ok else failed).append({"agent": ag.key, "name": ag.name, "message": r.message})
+
+    log_action("delete_unmanaged", f"{name}: {len(removed)} 处", ok=not failed)
+    if not removed and not failed:
+        return {"ok": True, "message": f"各工具里都没有 {name}", "removed": [], "failed": []}
+    msg = f"已清理 {name}（{len(removed)} 处）"
+    if failed:
+        msg += f"，{len(failed)} 处失败"
+    return {"ok": not failed, "message": msg, "removed": removed, "failed": failed}
+
+
+# --------------------------------------------------------------------------- #
 # 扫描
 # --------------------------------------------------------------------------- #
 def list_sources() -> list[SkillMeta]:

@@ -43,6 +43,31 @@ async function busy(btn, fn) {
   }
 }
 
+/* 二段确认按钮：第一次点只把按钮变红并改成一句问话，4.5 秒内再点才真执行。
+   删除类操作全走这里 —— 列表里误点一下不该直接毁东西。 */
+function armButton(btn, question, run) {
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent.trim();
+
+  if (btn.dataset.armed) {
+    clearTimeout(Number(btn.dataset.timer));
+    delete btn.dataset.armed;
+    btn.classList.remove('is-danger');
+    btn.textContent = btn.dataset.label;
+    return run();
+  }
+
+  btn.dataset.armed = '1';
+  btn.classList.add('is-danger');
+  btn.textContent = question;
+  btn.dataset.timer = String(
+    setTimeout(() => {
+      delete btn.dataset.armed;
+      btn.classList.remove('is-danger');
+      btn.textContent = btn.dataset.label;
+    }, 4500)
+  );
+}
+
 /* ---------------------------------------------------------------- 加载 */
 async function loadAll() {
   const [boot, data] = await Promise.all([call('bootstrap'), call('refresh')]);
@@ -235,6 +260,11 @@ function renderSkills() {
                     title="${st === 'copy' ? '副本：点击改为链接（原内容会备份）' : st === 'linked' ? '已链接：点击断开' : '点击建立链接'}">${label}</span></td>`;
         }).join('');
         const canFix = AGENT_ORDER.some((k) => r.states[k] === 'copy');
+        const links = AGENT_ORDER.filter((k) => r.states[k] === 'linked').length;
+        const copies = AGENT_ORDER.filter((k) => r.states[k] === 'copy').length;
+        const delHint = [`从真源删除（备份到 data/backups/source）`];
+        if (links) delHint.push(`拆掉 ${links} 处链接`);
+        if (copies) delHint.push(`${copies} 处副本保留`);
         const alias =
           r.display_name && r.display_name !== r.name
             ? `<span class="skill-alias">${esc(r.display_name)}</span>`
@@ -246,7 +276,10 @@ function renderSkills() {
               ${r.description ? `<div class="skill-desc" title="${esc(r.description)}">${esc(r.description)}</div>` : ''}
             </td>
             ${cells}
-            <td class="col-op">${canFix ? `<button class="mini-btn" data-fixskill="${esc(r.name)}">改链接</button>` : ''}</td>
+            <td class="col-op">
+              ${canFix ? `<button class="mini-btn" data-fixskill="${esc(r.name)}">改链接</button>` : ''}
+              <button class="mini-btn" data-delskill="${esc(r.name)}" title="${esc(delHint.join('，'))}">删除</button>
+            </td>
           </tr>`;
       })
       .join('');
@@ -259,6 +292,7 @@ function renderSkills() {
     el('unmanagedGroups').innerHTML = groupByAgent(sk.unmanaged, sk.agents, (u, agentKey) =>
       `<span class="chip">${esc(u.name)}
          <button class="chip-btn" data-adopt="${esc(u.name)}" data-agent="${agentKey}" title="收进真源, 之后所有平台共享">收进真源</button>
+         <button class="chip-btn" data-delunmanaged="${esc(u.name)}" title="从各工具清掉, 内容移入备份区">删除</button>
        </span>`
     );
   } else {
@@ -335,6 +369,10 @@ function renderMcp() {
           return `<td><span class="pill st-${st} ${clickable ? 'clickable' : ''}" ${clickable ? `data-mcp="${esc(r.name)}" data-agent="${k}"` : ''} title="${title}">${MCP_LABEL[st] || st}</span></td>`;
         }).join('');
         const cmd = (r.command || '').split(/[\\/]/).pop();
+        const written = AGENT_ORDER.filter((k) => ['synced', 'drift', 'disabled'].includes(r.states[k])).length;
+        const delMcpHint = written
+          ? `从真源和 ${written} 处工具配置里删掉，定义存档到 data/backups/deleted-mcp.json`
+          : '从真源删掉，定义存档到 data/backups/deleted-mcp.json';
         return `
           <tr>
             <td>
@@ -344,6 +382,7 @@ function renderMcp() {
             ${cells}
             <td class="col-op">
               <button class="mini-btn" data-mcpglobal="${esc(r.name)}">${r.disabled ? '启用' : '停用'}</button>
+              <button class="mini-btn" data-delmcp="${esc(r.name)}" title="${esc(delMcpHint)}">删除</button>
             </td>
           </tr>`;
       })
@@ -356,6 +395,7 @@ function renderMcp() {
     el('orphanGroups').innerHTML = groupByAgent(mc.orphans, mc.agents, (o, agentKey) =>
       `<span class="chip">${esc(o.name)}
          <button class="chip-btn" data-adoptmcp="${esc(o.name)}" data-agents="${agentKey}" title="收进真源">收进真源</button>
+         <button class="chip-btn" data-delmcporphan="${esc(o.name)}" title="从各工具配置里删掉, 不进真源">删除</button>
        </span>`
     );
   } else {
@@ -388,7 +428,9 @@ async function refresh() {
 }
 
 document.addEventListener('click', async (ev) => {
-  const t = ev.target.closest('[data-view],[data-skill],[data-mcp],[data-adopt],[data-adoptmcp],[data-fixskill],[data-mcpglobal],[data-openpath],[data-open]');
+  const t = ev.target.closest(
+    '[data-view],[data-skill],[data-mcp],[data-adopt],[data-adoptmcp],[data-fixskill],[data-mcpglobal],[data-openpath],[data-open],[data-delskill],[data-delunmanaged],[data-delmcp],[data-delmcporphan]'
+  );
   if (!t) return;
 
   // 导航
@@ -439,6 +481,30 @@ document.addEventListener('click', async (ev) => {
     });
   }
 
+  /* 删除 skill（从真源）—— 真源整目录先进备份区，再拆各工具里的链接；
+     副本默认保留，删完后它们会出现在「未纳管」里，想清再清。 */
+  if (t.dataset.delskill) {
+    const name = t.dataset.delskill;
+    return armButton(t, '确认删除', () =>
+      busy(t, async () => {
+        const r = await call('delete_skill', name, []);
+        toast(r.message, !r.ok);
+        await refresh();
+      })
+    );
+  }
+
+  // 清理未纳管的 skill（副本移进备份区）
+  if (t.dataset.delunmanaged) {
+    return armButton(t, '确认清理', () =>
+      busy(t, async () => {
+        const r = await call('delete_unmanaged_skill', t.dataset.delunmanaged);
+        toast(r.message, !r.ok);
+        await refresh();
+      })
+    );
+  }
+
   // MCP 格子轮转
   if (t.dataset.mcp) {
     return busy(null, async () => {
@@ -465,6 +531,28 @@ document.addEventListener('click', async (ev) => {
       toast(r.message, !r.ok);
       await refresh();
     });
+  }
+
+  /* 删除 MCP —— 真源摘掉 + 各工具配置里抹掉，定义存档在 data/backups/deleted-mcp.json */
+  if (t.dataset.delmcp) {
+    return armButton(t, '确认删除', () =>
+      busy(t, async () => {
+        const r = await call('mcp_remove', t.dataset.delmcp);
+        toast(r.message, !r.ok);
+        await refresh();
+      })
+    );
+  }
+
+  // 清理游离 MCP（不进真源，直接从各工具配置里删）
+  if (t.dataset.delmcporphan) {
+    return armButton(t, '确认清理', () =>
+      busy(t, async () => {
+        const r = await call('mcp_drop_orphan', t.dataset.delmcporphan);
+        toast(r.message, !r.ok);
+        await refresh();
+      })
+    );
   }
 });
 

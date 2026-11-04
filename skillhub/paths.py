@@ -105,12 +105,14 @@ def ensure_dirs() -> None:
 
 
 def short(path: Path) -> str:
-    """把 home 前缀折叠成 ~ , 便于展示."""
-    try:
-        rel = path.relative_to(HOME)
-        return "~/" + rel.as_posix()
-    except ValueError:
-        return path.as_posix()
+    """把 home 折叠成 ~, 项目内路径折叠成相对路径, 便于展示."""
+    for base, prefix in ((HOME, "~"), (PROJECT_ROOT, "")):
+        try:
+            rel = path.relative_to(base).as_posix()
+        except ValueError:
+            continue
+        return f"{prefix}/{rel}" if prefix else rel
+    return path.as_posix()
 
 
 def is_windows() -> bool:

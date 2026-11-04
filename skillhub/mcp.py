@@ -28,7 +28,7 @@ from typing import Any
 
 import tomlkit
 
-from .paths import AGENTS, MCP_MANIFEST, Agent, short
+from .paths import AGENTS, BACKUP_DIR, MCP_MANIFEST, Agent, short
 from .safeio import atomic_write_json, atomic_write_text, backup_file, log_action, read_json
 
 #: 只属于 manifest 的元字段, 不写进任何工具配置
@@ -154,7 +154,9 @@ def _toml_to_dict(v: Any) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # 写入
 # --------------------------------------------------------------------------- #
-def write_agent_mcp(ag: Agent, servers: dict[str, dict[str, Any]]) -> str:
+def write_agent_mcp(
+    ag: Agent, servers: dict[str, dict[str, Any]], drop: set[str] | None = None
+) -> str:
     """把 manifest 的托管条目渲染进该工具配置.
 
     关键: servers 传的是 manifest **全量**。
@@ -162,14 +164,18 @@ def write_agent_mcp(ag: Agent, servers: dict[str, dict[str, Any]]) -> str:
       - 非托管条目 = 用户在这个工具里手配的, 原样保留, 绝不碰
     这样"manifest 里没有适用于本工具的项"就不会被误解为"清空整段".
 
+    drop = 已经从 manifest 摘掉、但仍要从本工具抹掉的名字.
+      只从 manifest 删除是不够的 —— 条目会退化成"非托管", 下次同步时被
+      当作用户手配的原样保留, 于是"删了却还在". 删除流程必须把它带进来.
+
     返回 'written' / 'unchanged'.
     """
     p = ag.mcp_path
     p.parent.mkdir(parents=True, exist_ok=True)
 
     if ag.mcp_format == "toml":
-        return _write_toml(ag, servers)
-    return _write_json(ag, servers)
+        return _write_toml(ag, servers, drop)
+    return _write_json(ag, servers, drop)
 
 
 def _same_section(current: dict[str, Any], final: dict[str, Any]) -> bool:
@@ -186,7 +192,7 @@ def _same_section(current: dict[str, Any], final: dict[str, Any]) -> bool:
     return True
 
 
-def _write_json(ag: Agent, managed: dict[str, dict[str, Any]]) -> str:
+def _write_json(ag: Agent, managed: dict[str, dict[str, Any]], drop: set[str] | None = None) -> str:
     p = ag.mcp_path
     data = read_json(p, None)
     if not isinstance(data, dict):
@@ -195,8 +201,11 @@ def _write_json(ag: Agent, managed: dict[str, dict[str, Any]]) -> str:
     if not isinstance(current, dict):
         current = {}
 
+    # 要"归本工具管"的名字: manifest 里的 + 本次显式抹掉的
+    names = set(managed) | (drop or set())
+
     rendered = {name: spec_to_agent(ag, spec) for name, spec in desired_for(ag, managed).items()}
-    final = {k: v for k, v in current.items() if k not in managed}
+    final = {k: v for k, v in current.items() if k not in names}
     final.update(rendered)
 
     if p.exists() and _same_section(current, final):
@@ -209,11 +218,12 @@ def _write_json(ag: Agent, managed: dict[str, dict[str, Any]]) -> str:
     return "written"
 
 
-def _write_toml(ag: Agent, managed: dict[str, dict[str, Any]]) -> str:
+def _write_toml(ag: Agent, managed: dict[str, dict[str, Any]], drop: set[str] | None = None) -> str:
     p = ag.mcp_path
     text = p.read_text(encoding="utf-8") if p.exists() else ""
     doc = tomlkit.parse(text) if text.strip() else tomlkit.document()
 
+    names = set(managed) | (drop or set())
     rendered = {name: spec_to_agent(ag, spec) for name, spec in desired_for(ag, managed).items()}
 
     tbl = doc.get(ag.mcp_key)
@@ -222,14 +232,14 @@ def _write_toml(ag: Agent, managed: dict[str, dict[str, Any]]) -> str:
         tbl = doc[ag.mcp_key]
 
     before = {name: _toml_to_dict(v) for name, v in tbl.items()}
-    expected = {k: v for k, v in before.items() if k not in managed}
+    expected = {k: v for k, v in before.items() if k not in names}
     expected.update(rendered)
     if p.exists() and _same_section(before, expected):
         return "unchanged"
 
-    # 托管但本次不该存在的(比如 targets 不含本工具) -> 移除
+    # 托管但本次不该存在的(比如 targets 不含本工具 / 本次要删除) -> 移除
     for name in list(tbl.keys()):
-        if name in managed and name not in rendered:
+        if name in names and name not in rendered:
             del tbl[name]
 
     # 就地更新, 保留用户手配的 server 与注释
@@ -493,11 +503,101 @@ def upsert_server(name: str, spec: dict[str, Any]) -> None:
     log_action("mcp_upsert", name)
 
 
-def remove_server(name: str) -> None:
+#: 被删掉的 server 定义存档 —— 后悔时照着它手写回来即可
+DELETED_ARCHIVE = BACKUP_DIR / "deleted-mcp.json"
+
+
+def _archive_deleted(name: str, spec: dict[str, Any]) -> None:
+    data = read_json(DELETED_ARCHIVE, {}) or {}
+    if not isinstance(data, dict):
+        data = {}
+    data[name] = {
+        "deleted_at": datetime.now().isoformat(timespec="seconds"),
+        "spec": copy.deepcopy(spec),
+    }
+    atomic_write_json(DELETED_ARCHIVE, data)
+
+
+def delete_server(name: str, agents: list[str] | None = None) -> dict[str, Any]:
+    """从真源和各工具配置里彻底删掉一个 MCP server.
+
+    两步缺一不可:
+      1. 从 manifest 摘掉, 并先把定义存进 data/backups/deleted-mcp.json
+      2. 带着 drop={name} 重写各工具配置 —— 否则它退化成"非托管条目"
+         被原样保留, 删了却还在
+    """
     man = load_manifest()
-    man["servers"].pop(name, None)
+    spec = man["servers"].get(name)
+    if spec is None:
+        return {"ok": False, "message": f"真源里没有 {name}", "agents": []}
+
+    _archive_deleted(name, spec)
+    man["servers"].pop(name)
     save_manifest(man)
-    log_action("mcp_remove", name)
+
+    rest = man["servers"]
+    results: list[dict[str, Any]] = []
+    for ag in AGENTS:
+        if not ag.available:
+            continue
+        if agents and ag.key not in agents:
+            continue
+        had = name in read_agent_mcp(ag)
+        try:
+            write_agent_mcp(ag, rest, drop={name})
+            results.append({"agent": ag.key, "name": ag.name, "ok": True, "had": had})
+        except Exception as exc:
+            results.append(
+                {"agent": ag.key, "name": ag.name, "ok": False, "had": had, "message": f"{type(exc).__name__}: {exc}"}
+            )
+
+    cleared = sum(1 for r in results if r["had"])
+    failed = sum(1 for r in results if not r["ok"])
+    log_action(
+        "mcp_delete",
+        f"{name}: 从 {cleared} 处抹掉" + (f", {failed} 处失败" if failed else ""),
+        ok=failed == 0,
+    )
+    msg = f"已删除 {name}"
+    if cleared:
+        msg += f", 清掉了 {cleared} 处配置"
+    if failed:
+        msg += f", {failed} 处写入失败"
+    return {"ok": True, "message": msg, "agents": results, "archive": short(DELETED_ARCHIVE)}
+
+
+def drop_orphan(name: str, agents: list[str] | None = None) -> dict[str, Any]:
+    """抹掉不在 manifest 里的游离条目(用户在某工具里手配的).
+
+    只动这一个名字, 其余手配条目原样保留 —— 用的还是"托管项之外一律不碰"
+    那套规则, 只是把名字临时塞进托管集合里以便写空.
+    """
+    man = load_manifest()
+    if name in man["servers"]:
+        return {"ok": False, "message": "它在真源里, 应当用删除而不是清理"}
+
+    removed: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for ag in AGENTS:
+        if not ag.available:
+            continue
+        if agents and ag.key not in agents:
+            continue
+        if name not in read_agent_mcp(ag):
+            continue
+        try:
+            write_agent_mcp(ag, man["servers"], drop={name})
+            removed.append({"agent": ag.key, "name": ag.name})
+        except Exception as exc:
+            failed.append({"agent": ag.key, "name": ag.name, "message": str(exc)})
+
+    log_action("mcp_drop_orphan", f"{name}: {len(removed)} 处", ok=not failed)
+    return {
+        "ok": bool(removed) or not failed,
+        "message": f"已从 {len(removed)} 处清除 {name}" if removed else "没有可清除的位置",
+        "removed": removed,
+        "failed": failed,
+    }
 
 
 def import_orphan(name: str, from_agents: list[str] | None = None) -> bool:

@@ -104,6 +104,18 @@ def run_shot(window: webview.Window) -> None:
             print(f"SHOT[confirm]: {out}")
         except Exception as exc:
             print(f"确认态截图失败: {exc}")
+
+        # 删除按钮的二次确认态: 只点一下(仅进入待确认), 不会真删
+        try:
+            window.evaluate_js("document.querySelector('.nav-item[data-view=\"skills\"]').click()")
+            time.sleep(0.5)
+            window.evaluate_js("document.querySelector('[data-delskill]').click()")
+            time.sleep(0.5)
+            out = Path(tempfile.gettempdir()) / "skillhub-delconfirm.png"
+            ImageGrab.grab().save(out)
+            print(f"SHOT[delconfirm]: {out}")
+        except Exception as exc:
+            print(f"删除确认态截图失败: {exc}")
     except Exception as exc:
         print(f"截图失败: {exc}")
     time.sleep(0.5)

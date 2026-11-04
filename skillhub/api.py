@@ -141,6 +141,20 @@ class Bridge:
         }
 
     @_wrap
+    def delete_skill(self, name: str, also_agents: list[str] | None = None) -> dict[str, Any]:
+        """从真源删除 skill.
+
+        真源目录先整块搬进 data/backups/source（可逆），再拆各工具里的链接；
+        副本默认保留，只有点名列进 also_agents 的才一起清。
+        """
+        return skills.delete_skill(name, also_agents)
+
+    @_wrap
+    def delete_unmanaged_skill(self, name: str) -> dict[str, Any]:
+        """清掉未纳管的 skill: 副本移进备份区, 外部链接直接拆."""
+        return skills.delete_unmanaged(name)
+
+    @_wrap
     def toggle_skill(self, agent_key: str, name: str) -> dict[str, Any]:
         """点一下徽标: 已链接则断开, 否则建立链接."""
         ag = skills_agent(agent_key)
@@ -241,9 +255,18 @@ class Bridge:
         return {"ok": True, "message": "已保存"}
 
     @_wrap
-    def mcp_remove(self, name: str) -> dict[str, Any]:
-        mcp.remove_server(name)
-        return {"ok": True, "message": "已从真源移除 (各工具里需点同步才会消失)"}
+    def mcp_remove(self, name: str, agents: list[str] | None = None) -> dict[str, Any]:
+        """彻底删除一个 MCP: 真源摘掉 + 各工具配置里抹掉.
+
+        只从 manifest 删除是不够的 —— 那样它在各工具里会退化成"非托管条目"
+        被原样保留, 看着删了其实还在跑.
+        """
+        return mcp.delete_server(name, agents)
+
+    @_wrap
+    def mcp_drop_orphan(self, name: str, agents: list[str] | None = None) -> dict[str, Any]:
+        """抹掉游离条目（用户在某工具里手配、真源里没有的）."""
+        return mcp.drop_orphan(name, agents)
 
     # ---------------- 杂项 ----------------
     @_wrap

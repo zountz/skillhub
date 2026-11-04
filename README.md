@@ -55,8 +55,8 @@ MCP 在四个地方各写一遍，格式还分 JSON 和 TOML 两种。装个新 
 双击 `启动 SkillHub.bat`。三个页面：
 
 - **总览** —— 四个工具的健康状态、待处理的不一致清单
-- **Skills** —— 每个 skill 在四个工具里的状态徽标，点一下就在「已链接 / 未装」之间切换；下方是只存在于某个工具、还没进真源的 skill，可一键「收进真源」
-- **MCP** —— 每个服务的四列状态，点格子切换该工具是否启用；右侧开关是全局停用
+- **Skills** —— 每个 skill 在四个工具里的状态徽标，点一下就在「已链接 / 未装」之间切换；行尾「删除」从真源删掉；下方是只存在于某个工具、还没进真源的 skill，可一键「收进真源」或「删除」
+- **MCP** —— 每个服务的四列状态，点格子切换该工具是否启用；右侧是全局停用与删除
 
 徽标含义：
 
@@ -108,6 +108,32 @@ python cli.py gui           # 打开桌面界面
 
 想让自动同步常驻，用 `python cli.py watch`，再把这个命令挂到任务计划程序的开机启动里即可。
 
+## 删除
+
+三层粒度，都能反悔——删除一律是「先搬进备份区」，从不直接抹掉：
+
+| 操作 | 位置 | 做了什么 |
+|---|---|---|
+| 断链 | Skills 页点已链接的徽标 | 只删链接，真源与副本都不动 |
+| 删真源 | Skills 页行尾「删除」 | 真源整目录移到 `data/backups/source/`，各工具里指向它的链接一并拆掉 |
+| 清副本 | 未纳管列表「删除」 | 各工具里那份独立副本移到 `data/backups/<工具>/skills/` |
+
+删真源时**副本默认保留**：它可能是你改过、真源里已经没有的唯一版本，不该被连坐删掉。删完之后这些副本会出现在「未纳管」里，要清再点一次删除即可。
+
+MCP 侧对称：
+
+| 操作 | 位置 | 做了什么 |
+|---|---|---|
+| 停用 | 右侧「停用」 | 全局关闭，配置留着，随时能开 |
+| 删真源 | 右侧「删除」 | 从 manifest 摘掉，**并把各工具配置里的条目抹掉**；定义存档到 `data/backups/deleted-mcp.json` |
+| 清游离 | 游离条目「删除」 | 从各工具配置里删掉，不进真源 |
+
+MCP 删除必须同时抹各工具配置——只从 manifest 摘掉的话，条目会在各工具里退化成「非托管」，同步时被当成你手配的原样保留，看着删了其实还在跑。这是 `drop` 参数存在的唯一理由。
+
+所有删除都是**两段点击**：第一次点只把按钮变红显示「确认删除」，4.5 秒内再点一次才执行。列表里误点一下不该毁掉东西。
+
+删除只有 GUI 有，命令行故意不做——批量误删的代价太高，值不得省那两下点击。
+
 ## 安全机制
 
 改配置最怕写坏。这里做了四层：
@@ -116,11 +142,13 @@ python cli.py gui           # 打开桌面界面
 2. **原子写** —— 同目录临时文件 + `os.replace`，进程中途崩溃也不会留下半截 JSON
 3. **只碰自己管的** —— 各工具里用户手配的 MCP 条目原样保留；manifest 里没列的服务一律不删
 4. **幂等** —— 内容语义相同就不写盘，不会因为 `env: {}` 这类空字段反复重写整个配置
+5. **删除即搬家** —— 删 skill 是把整个目录 move 进 `data/backups/source/`，失败就整体放弃、什么都不动；绝不会出现「删了一半」
 
-`tests/test_roundtrip.py` 专门验证这几点：在真实配置的**副本**上跑一遍写回，检查其他段落（Codex 的 `[desktop]`、`[projects.*]`、注释）是否完好。改动 `skillhub/mcp.py` 后请先跑它：
+`tests/test_roundtrip.py` 专门验证 1–4 点：在真实配置的**副本**上跑一遍写回，检查其他段落（Codex 的 `[desktop]`、`[projects.*]`、注释）是否完好。`tests/test_delete.py` 验证删除：真源进备份而非消失、链接全拆、副本不被连坐、MCP 从 manifest 和四家配置里同时抹掉且手配条目与 TOML 注释完好。改动 `skillhub/mcp.py` 或 `skills.py` 后请先跑它们：
 
 ```bash
 python tests/test_roundtrip.py
+python tests/test_delete.py
 ```
 
 ## 加一个新工具
@@ -132,18 +160,20 @@ python tests/test_roundtrip.py
 ```
 skillhub/
   paths.py     路径与工具定义（唯一需要按机器改的地方）
-  skills.py    扫描 / 状态判定 / junction 建立 / 纳管 / 自动同步
-  mcp.py       manifest 读写 / 各家格式渲染 / 同步
+  skills.py    扫描 / 状态判定 / junction 建立 / 纳管 / 删除 / 自动同步
+  mcp.py       manifest 读写 / 各家格式渲染 / 同步 / 删除
   settings.py  用户偏好（哪些工具参与自动同步）
   safeio.py    备份 / 原子写 / 操作日志
   api.py       暴露给界面的方法
 cli.py         命令行入口
 ui/            index.html + style.css + app.js（无框架）
 data/
-  mcp-servers.json   MCP 单一真源
-  settings.json      本机偏好
-  backups/           所有改动前的存档
-  logs/actions.jsonl 操作记录
+  mcp-servers.json      MCP 单一真源
+  settings.json         本机偏好
+  backups/<工具>/        各工具配置每次落盘前的存档（保留 30 份）
+  backups/source/       删掉的真源 skill（整目录，可原样搬回）
+  backups/deleted-mcp.json  删掉的 MCP 定义（可照着手写回 manifest）
+  logs/actions.jsonl    操作记录
 ```
 
 ## 排错
