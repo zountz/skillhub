@@ -112,13 +112,17 @@ function renderOverview() {
 
   el('pageSub').textContent = `${sk.total} 个 Skill · ${mc.total} 个 MCP 服务 · 真源 ${sk.sources_dir}`;
 
-  const driftTotal = s.skills_drift + s.mcp_drift;
+  // 三项足够: 总数、已经打通了多少、还有多少要处理。
+  // 原来的"待处理不一致"其实是"副本偏离"与 MCP 漂移的加总, 属于同一件事算两遍。
+  const pending = s.skills_drift + s.mcp_drift + s.unmanaged + s.orphans;
+  const pendingDetail = `副本偏离 ${s.skills_drift} · MCP 不一致 ${s.mcp_drift} · 未纳管 ${s.unmanaged + s.orphans}`;
   el('healthStrip').innerHTML = `
     <div class="health-item"><div class="health-num">${s.skills}</div><div class="health-label">Skill 总数</div></div>
     <div class="health-item"><div class="health-num is-ok">${s.skills_linked}</div><div class="health-label">已链接份数</div></div>
-    <div class="health-item"><div class="health-num ${s.skills_drift ? 'is-warn' : ''}">${s.skills_drift}</div><div class="health-label">副本已偏离</div></div>
-    <div class="health-item"><div class="health-num ${driftTotal ? 'is-warn' : 'is-ok'}">${driftTotal}</div><div class="health-label">待处理不一致</div></div>
-    <div class="health-item"><div class="health-num ${s.unmanaged + s.orphans ? 'is-warn' : ''}">${s.unmanaged + s.orphans}</div><div class="health-label">未纳管条目</div></div>
+    <div class="health-item" title="${esc(pendingDetail)}">
+      <div class="health-num ${pending ? 'is-warn' : 'is-ok'}">${pending}</div>
+      <div class="health-label">待处理</div>
+    </div>
   `;
 
   el('agentGrid').innerHTML = sk.agents
@@ -172,9 +176,28 @@ function renderOverview() {
   const panel = el('attentionPanel');
   if (todos.length) {
     panel.hidden = false;
-    el('todoList').innerHTML = todos
-      .slice(0, 12)
-      .map((t) => `<li><span class="todo-tag">${esc(t.tag)}</span><span>${esc(t.text)}</span></li>`)
+    // 按类型分组: 原来每行都重复一遍"未纳管", 12 行就是 12 次同样的标签
+    const byTag = new Map();
+    todos.forEach((t) => {
+      if (!byTag.has(t.tag)) byTag.set(t.tag, []);
+      byTag.get(t.tag).push(t.text);
+    });
+    el('todoList').innerHTML = [...byTag.entries()]
+      .map(([tag, items]) => {
+        const shown = items.slice(0, 4);
+        const more = items.length - shown.length;
+        return `
+        <li class="todo-group">
+          <div class="todo-group-head">
+            <span class="todo-tag">${esc(tag)}</span>
+            <span class="todo-count">${items.length} 条</span>
+          </div>
+          <ul class="todo-items">
+            ${shown.map((x) => `<li>${esc(x)}</li>`).join('')}
+            ${more > 0 ? `<li class="todo-more">还有 ${more} 条，到对应页面处理</li>` : ''}
+          </ul>
+        </li>`;
+      })
       .join('');
   } else {
     panel.hidden = true;
