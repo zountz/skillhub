@@ -134,15 +134,20 @@ def run_shot(window: webview.Window) -> None:
         except Exception as exc:
             print(f"悬停截图失败: {exc}")
 
-        # 详情面板
-        for view, sel, tag in (
-            ("skills", "[data-skillinfo]", "detail-skill"),
-            ("mcp", "[data-mcpinfo]", "detail-mcp"),
+        # 详情面板: MCP 那张专挑环境变量最多的 node_repl, 最容易暴露排版问题
+        for view, expr, tag in (
+            ("skills", "document.querySelector('[data-skillinfo]')", "detail-skill"),
+            (
+                "mcp",
+                "([...document.querySelectorAll('[data-mcpinfo]')].find(x=>x.dataset.mcpinfo==='node_repl')"
+                "||document.querySelector('[data-mcpinfo]'))",
+                "detail-mcp",
+            ),
         ):
             try:
                 window.evaluate_js(f"document.querySelector('.nav-item[data-view=\"{view}\"]').click()")
                 time.sleep(0.5)
-                window.evaluate_js(f"document.querySelector('{sel}').click()")
+                window.evaluate_js(f"({expr}).click()")
                 time.sleep(1.0)
                 out = Path(tempfile.gettempdir()) / f"skillhub-{tag}.png"
                 ImageGrab.grab().save(out)

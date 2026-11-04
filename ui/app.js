@@ -195,14 +195,13 @@ async function openMcp(name) {
 
   const cmd = [d.command, ...d.args].filter(Boolean).join(' ');
   const env = d.env.length
-    ? `<dl class="kv">${d.env
+    ? `<div class="env-list">${d.env
         .map(
           (e) =>
-            `<dt>${esc(e.key)}</dt><dd><code>${esc(e.value)}</code>${
-              e.hidden ? ' <span class="hint">已遮住</span>' : ''
-            }</dd>`
+            `<div class="env-item"><code class="env-key">${esc(e.key)}</code>
+              <span class="env-val">${esc(e.value)}${e.hidden ? ' <span class="hint">已遮住</span>' : ''}</span></div>`
         )
-        .join('')}</dl>`
+        .join('')}</div>`
     : '<div class="hint">没有环境变量</div>';
 
   el('detailBody').innerHTML = `
