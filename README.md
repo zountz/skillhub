@@ -163,6 +163,20 @@ python tests/test_roundtrip.py
 python tests/test_delete.py
 ```
 
+## 换机器、别人用
+
+代码里没有一处绝对路径，全部由 `Path.home()` 推导。别人 clone 下来直接跑，用的就是他自己机器上的位置。
+
+定位顺序（后者覆盖前者）：
+
+1. **内置默认** —— `~/.claude/skills`、`~/.codex/config.toml` 这些
+2. **环境变量** —— 工具自己认的：`CLAUDE_CONFIG_DIR`、`CODEX_HOME`；Qoder 依次找 `~/.qoder-cn`、`~/.qoder`，哪存在用哪个
+3. **`data/locations.json`** —— 界面上「路径设置」页填的值
+
+界面上「路径设置」页列出真源与四家的 skills 目录、MCP 配置文件，标出「存在 / 不存在」，可以逐项改、也可以一键清空回到自动探测。输入框留空 = 用默认值。
+
+改完保存后需要**关掉窗口重新打开**才生效：`AGENTS` 和真源是启动时构建的常量，各模块 `from .paths import ...` 拿到的就是那一刻的值。
+
 ## 加一个新工具
 
 只改 `skillhub/paths.py` 里的 `AGENTS`，加一项（key、名称、skills 目录、MCP 文件、格式、键名）即可，UI 会自动多出一列。
@@ -182,6 +196,7 @@ ui/            index.html + style.css + app.js（无框架）
 data/
   mcp-servers.json      MCP 单一真源
   settings.json         本机偏好
+  locations.json       本机路径覆盖(不填=自动探测)
   backups/<工具>/        各工具配置每次落盘前的存档（保留 30 份）
   backups/source/       删掉的真源 skill（整目录，可原样搬回）
   backups/deleted-mcp.json  删掉的 MCP 定义（可照着手写回 manifest）

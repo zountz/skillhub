@@ -345,6 +345,26 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
 .note-input:focus { outline: none; border-color: var(--accent); }
 .note-foot { margin-top: 9px; display: flex; justify-content: flex-end; }
 
+/* ---------------- 路径设置 ---------------- */
+/* deslop-ignore-next-line 34 — 路径等宽, 便于比对是否同一处 */
+.path-input {
+  width: 100%; font: inherit; font-size: 13px; padding: 5px 9px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  border: 1px solid var(--line-strong); border-radius: var(--r);
+  background: var(--surface); color: var(--ink);
+}
+.path-input:focus { outline: none; border-color: var(--accent); }
+.path-input::placeholder { color: var(--ink-3); }
+.path-table .col-name { width: 270px; }
+.path-banner {
+  margin-bottom: 14px; padding: 10px 14px; border-radius: var(--r);
+  background: var(--warn-bg); color: var(--warn);
+  border: 1px solid #eddbb4; font-size: 13px;
+}
+.path-banner[hidden] { display: none; }
+.path-hint { margin-top: 12px; font-size: 11px; line-height: 1.75; color: var(--ink-3); }
+.path-hint strong { color: var(--ink-2); font-weight: 600; }
+
 /* ---------------- 提示 ---------------- */
 .toast {
   position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(12px);

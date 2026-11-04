@@ -13,7 +13,7 @@ import sys
 import traceback
 from typing import Any, Callable
 
-from . import __version__, mcp, settings, skills
+from . import __version__, mcp, paths, settings, skills
 from .paths import AGENTS, BACKUP_DIR, MCP_MANIFEST, NO_WINDOW, SKILLS_SOURCE, Agent, ensure_dirs, short
 from .safeio import log_action, recent_actions
 
@@ -283,6 +283,44 @@ class Bridge:
     def mcp_drop_orphan(self, name: str, agents: list[str] | None = None) -> dict[str, Any]:
         """抹掉游离条目（用户在某工具里手配、真源里没有的）."""
         return mcp.drop_orphan(name, agents)
+
+    # ---------------- 路径设置 ----------------
+    @_wrap
+    def locations(self) -> dict[str, Any]:
+        """当前生效的位置、默认值、来源(默认/环境变量/手填)."""
+        return paths.locations_snapshot()
+
+    @_wrap
+    def save_locations(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """写 data/locations.json.
+
+        AGENTS / SKILLS_SOURCE 是启动时构建的常量, 改完必须重启进程才生效 ——
+        这里如实告诉界面, 不要假装已经切换。
+        """
+        paths.save_locations(payload or {})
+        log_action("save_locations", f"写入 {short(paths.LOCATIONS_FILE)}")
+        return {
+            "ok": True,
+            "message": "已保存，重启后生效",
+            "file": short(paths.LOCATIONS_FILE),
+            "restart_needed": True,
+        }
+
+    @_wrap
+    def pick_dir(self, current: str = "") -> dict[str, Any]:
+        """弹系统目录选择框. 取消了就返回空字符串."""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            picked = filedialog.askdirectory(initialdir=current or str(paths.HOME))
+            root.destroy()
+        except Exception as exc:
+            return {"path": "", "message": f"系统选择框不可用，请直接粘贴路径（{exc}）"}
+        return {"path": picked or "", "message": ""}
 
     # ---------------- 杂项 ----------------
     @_wrap

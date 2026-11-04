@@ -298,19 +298,22 @@ function renderSide() {
 function setView(view) {
   STATE.view = view;
   document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('is-active', b.dataset.view === view));
-  ['overview', 'skills', 'mcp', 'logs'].forEach((v) => (el('view-' + v).hidden = v !== view));
+  ['overview', 'skills', 'mcp', 'logs', 'paths'].forEach((v) => (el('view-' + v).hidden = v !== view));
 
   const titles = {
     overview: ['总览', '四个工具的 Skill 与 MCP 是否一致'],
     skills: ['Skills', '同一份真源，靠目录链接分发到各工具'],
     mcp: ['MCP', '一处维护，按各家格式渲染写入'],
     logs: ['操作记录', '所有改动都可回溯，备份在 data/backups'],
+    paths: ['路径设置', '真源与各工具配置在哪，探测不到时可以手动指路'],
   };
   el('pageTitle').textContent = titles[view][0];
   el('pageSub').textContent = titles[view][1];
-  const hide = view === 'logs';
+  const hide = view === 'logs' || view === 'paths';
   el('btnSyncAll').style.display = hide ? 'none' : '';
   el('btnAutoSync').style.display = hide ? 'none' : '';
+
+  if (view === 'paths') busy(null, () => renderPaths(true).catch((e) => toast(e.message, true)));
 }
 
 /* ---------------------------------------------------------------- 总览 */
@@ -611,6 +614,97 @@ function renderLogs() {
         .join('')
     : `<tr><td colspan="4"><div class="empty">暂无记录</div></td></tr>`;
 }
+
+/* ---------------------------------------------------------------- 路径设置 */
+let LOC = null;
+
+function pathRow(o) {
+  const chip = o.exists ? '<span class="pill st-linked">存在</span>' : '<span class="pill st-missing">不存在</span>';
+  const extra = o.note ? ` · ${esc(o.note)}` : '';
+  return `
+    <tr>
+      <td>
+        <div class="skill-name">${esc(o.label)}</div>
+        <div class="skill-path">默认 ${esc(o.def)}${extra}</div>
+      </td>
+      <td>
+        <input class="path-input" spellcheck="false" autocomplete="off"
+          data-path-key="${escAttr(o.key)}" data-path-field="${escAttr(o.field)}"
+          value="${escAttr(o.value)}" placeholder="${escAttr(o.def)}">
+      </td>
+      <td class="col-op">${chip}</td>
+    </tr>`;
+}
+
+/* 空输入框 = 用默认值。只回填"确实被手改过"的那几项,
+   否则一进页面每个框都填满绝对路径, 保存一次就全变成"手填"了。 */
+async function renderPaths(force) {
+  if (!LOC || force) LOC = await call('locations');
+  el('pathNote').textContent = `主目录 ${LOC.home} · 配置文件 ${LOC.file}`;
+
+  const rows = [
+    pathRow({
+      key: '__source',
+      field: 'source',
+      label: '真源 Skills 目录',
+      value: LOC.source_overridden ? LOC.source : '',
+      def: LOC.default_source,
+      exists: LOC.source_exists,
+    }),
+  ];
+  LOC.agents.forEach((a) => {
+    rows.push(
+      pathRow({
+        key: a.key,
+        field: 'skills_dir',
+        label: a.name + ' · Skills',
+        value: a.skills_overridden ? a.skills_dir : '',
+        def: a.default_skills,
+        exists: a.skills_exists,
+        note: a.env_var && a.env_value ? `${a.env_var}=${a.env_value}` : '',
+      })
+    );
+    rows.push(
+      pathRow({
+        key: a.key,
+        field: 'mcp_path',
+        label: a.name + ' · MCP 配置',
+        value: a.mcp_overridden ? a.mcp_path : '',
+        def: a.default_mcp,
+        exists: a.mcp_exists,
+      })
+    );
+  });
+  el('pathBody').innerHTML = rows.join('');
+}
+
+el('btnPathSave').addEventListener('click', (e) =>
+  busy(e.target, async () => {
+    const payload = { source: '', agents: {} };
+    document.querySelectorAll('[data-path-key]').forEach((inp) => {
+      const key = inp.dataset.pathKey;
+      const field = inp.dataset.pathField;
+      const val = inp.value.trim();
+      if (key === '__source') {
+        payload.source = val;
+        return;
+      }
+      payload.agents[key] = payload.agents[key] || {};
+      payload.agents[key][field] = val;
+    });
+    const r = await call('save_locations', payload);
+    await renderPaths(true);
+    const banner = el('pathBanner');
+    banner.hidden = false;
+    banner.textContent = `${r.message}：已写入 ${r.file}。关掉这个窗口，重新双击「启动 SkillHub.bat」。`;
+    toast('路径已保存，重启后生效');
+  })
+);
+
+el('btnPathReset').addEventListener('click', () => {
+  document.querySelectorAll('[data-path-key]').forEach((inp) => (inp.value = ''));
+  toast('已清空，点「保存」后全部回到自动探测的默认值');
+});
 
 /* ---------------------------------------------------------------- 交互 */
 async function refresh() {

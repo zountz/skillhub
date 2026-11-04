@@ -83,7 +83,7 @@ def run_shot(window: webview.Window) -> None:
     try:
         from PIL import ImageGrab
 
-        for view in ("overview", "skills", "mcp"):
+        for view in ("overview", "skills", "mcp", "paths"):
             try:
                 window.evaluate_js(
                     f"document.querySelector('.nav-item[data-view=\"{view}\"]').click()"

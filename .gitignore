@@ -7,6 +7,8 @@ data/backups/
 data/logs/
 # 本机偏好(哪些工具参与自动同步), 与具体机器相关
 data/settings.json
+# 本机路径覆盖(别人 clone 下来不该继承我的路径), 与具体机器相关
+data/locations.json
 
 # ---- Python ----
 __pycache__/

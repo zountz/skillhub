@@ -19,6 +19,7 @@
       <button class="nav-item" data-view="skills">Skills <span class="nav-badge" id="navSkillCount">0</span></button>
       <button class="nav-item" data-view="mcp">MCP <span class="nav-badge" id="navMcpCount">0</span></button>
       <button class="nav-item" data-view="logs">操作记录</button>
+      <button class="nav-item" data-view="paths">路径设置</button>
     </nav>
 
     <div class="side-foot">
@@ -119,6 +120,29 @@
         </div>
         <div class="groups" id="orphanGroups"></div>
       </div>
+    </section>
+
+    <!-- 路径设置 -->
+    <section class="view" id="view-paths" hidden>
+      <div class="toolbar">
+        <div class="toolbar-note" id="pathNote"></div>
+        <div class="spacer"></div>
+        <button class="btn" id="btnPathReset">清空改用默认</button>
+        <button class="btn primary" id="btnPathSave">保存</button>
+      </div>
+      <div class="path-banner" id="pathBanner" hidden></div>
+      <div class="table-wrap">
+        <table class="grid path-table">
+          <thead>
+            <tr><th class="col-name">位置</th><th>路径</th><th class="col-op">检测</th></tr>
+          </thead>
+          <tbody id="pathBody"></tbody>
+        </table>
+      </div>
+      <p class="path-hint">
+        留空 = 用自动探测到的默认值。改完点保存后，<strong>关掉窗口重新打开</strong>才生效 ——
+        各模块的位置是启动时确定的。别人用这个项目不需要改这里：路径全部由用户主目录推导，探测不到时再手动指路。
+      </p>
     </section>
 
     <!-- 日志 -->
