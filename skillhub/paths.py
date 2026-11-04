@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -56,8 +57,12 @@ class Agent:
 
     @property
     def available(self) -> bool:
-        """工具是否安装过 (配置根目录存在)."""
-        return self.skills_dir.parent.exists()
+        """工具是否安装过.
+
+        skills 目录或 MCP 配置文件任一存在就算装了 —— 有些工具(比如只给
+        Claude Desktop 配 MCP 的场景)根本没有 skills 目录, 不能因此判为未安装。
+        """
+        return self.skills_dir.parent.exists() or self.mcp_path.exists()
 
     @property
     def mcp_exists(self) -> bool:
@@ -192,6 +197,26 @@ def _build() -> tuple[Path, tuple[Agent, ...]]:
                 hint=spec.hint,
             )
         )
+
+    # 名单之外、由"扫目录"发现或用户手动纳入的工具。
+    # 它们不知道各家格式差异, 只按扫描到的证据来 —— 所以 format / key 都来自
+    # 实际读到的配置, 不是猜的。
+    for key, c in (ov.get("custom") or {}).items():
+        if not isinstance(c, dict):
+            continue
+        fallback = HOME / ("." + key)
+        out.append(
+            Agent(
+                key=str(key),
+                name=str(c.get("name") or key),
+                skills_dir=resolve(c["skills_dir"]) if c.get("skills_dir") else fallback / "skills",
+                mcp_path=resolve(c["mcp_path"]) if c.get("mcp_path") else fallback / "mcp.json",
+                mcp_format=str(c.get("format") or "json"),
+                mcp_key=str(c.get("mcp_key") or "mcpServers"),
+                enable_field=str(c.get("enable_field") or ""),
+                hint="扫描发现后纳入的工具",
+            )
+        )
     return source, tuple(out)
 
 
@@ -232,6 +257,173 @@ def detect_now() -> list[dict[str, Any]]:
                 "env_value": env_val,
             }
         )
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# 扫目录发现: 不靠名单, 靠特征
+# --------------------------------------------------------------------------- #
+#: 扫主目录时跳过的: 系统目录与纯缓存, 探它们没意义还慢
+SCAN_SKIP = {
+    "appdata", "documents", "downloads", "desktop", "music", "pictures", "videos",
+    "favorites", "links", "contacts", "searches", "saved games", "onedrive",
+    "node_modules", "site-packages", "__pycache__", "venv", ".venv", ".git",
+}
+
+#: 常见的 MCP 配置文件名. 名字对不上也能命中 —— 见 _mcp_host 里的通配
+MCP_FILENAMES = (
+    "mcp.json", "mcpservers.json", "mcp_servers.json", "settings.json",
+    "claude_desktop_config.json", "config.json", "config.toml", "agents.json",
+)
+MCP_KEYS = ("mcpServers", "mcp_servers", "servers", "McpServers")
+
+
+def _skill_host(d: Path) -> str:
+    """该目录下有没有 skills/ 且里面确实躺着 SKILL.md."""
+    for sub in ("skills", "Skills", "SKILLS", "skill"):
+        p = d / sub
+        try:
+            if not p.is_dir():
+                continue
+            for child in p.iterdir():
+                if child.is_dir() and (child / "SKILL.md").exists():
+                    return str(p)
+        except OSError:
+            continue
+    return ""
+
+
+def _mcp_file(p: Path) -> tuple[str, str]:
+    """(format, key) —— 只认"真能读出 MCP 段"的文件, 不认文件名."""
+    try:
+        if not p.is_file() or p.stat().st_size > 8_000_000:
+            return "", ""
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "", ""
+
+    if p.suffix.lower() == ".toml":
+        return ("toml", "mcp_servers") if "[mcp_servers" in text else ("", "")
+
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return "", ""
+    if not isinstance(data, dict):
+        return "", ""
+    for key in MCP_KEYS:
+        val = data.get(key)
+        if isinstance(val, dict) and val:
+            return "json", key
+    return "", ""
+
+
+def _mcp_host(d: Path) -> tuple[str, str, str]:
+    """(path, format, key); 没有则三个空串."""
+    for name in MCP_FILENAMES:
+        fmt, key = _mcp_file(d / name)
+        if fmt:
+            return str(d / name), fmt, key
+    try:
+        for f in sorted(d.glob("*mcp*.json")):
+            fmt, key = _mcp_file(f)
+            if fmt:
+                return str(f), fmt, key
+    except OSError:
+        pass
+    return "", "", ""
+
+
+def _norm_key(name: str) -> str:
+    k = re.sub(r"[^a-z0-9]+", "_", str(name).strip().lstrip(".").lower()).strip("_")
+    return k or "tool"
+
+
+def discover() -> list[dict[str, Any]]:
+    """扫主目录, 找出"像 AI 工具配置"的东西.
+
+    判定只看证据, 不看名字:
+      · 有 <目录>/skills/<某个>/SKILL.md  → 是 skill 宿主
+      · 有能读出 mcpServers / [mcp_servers] 段的 json/toml → 是 MCP 宿主
+
+    所以在册的(内置四家、已纳入的、真源自己)全部排除后, 剩下什么就报什么 ——
+    名单里没有的工具也能被发现。
+    """
+    taken: set[str] = {str(SKILLS_SOURCE).lower(), str(SKILLS_SOURCE.parent).lower()}
+    for a in AGENTS:
+        taken |= {str(a.skills_dir).lower(), str(a.mcp_path).lower(), str(a.skills_dir.parent).lower()}
+
+    found: dict[str, dict[str, Any]] = {}
+
+    def add(key: str, item: dict[str, Any]) -> None:
+        base, i = key, 2
+        while key in found or key in AGENT_MAP:
+            key = f"{base}{i}"
+            i += 1
+        item["key"] = key
+        found[key] = item
+
+    # 1) 主目录下的一级目录(含点目录)
+    try:
+        children = sorted((c for c in HOME.iterdir() if c.is_dir()), key=lambda p: p.name.lower())
+    except OSError:
+        children = []
+    for d in children:
+        if d.name.lower() in SCAN_SKIP:
+            continue
+        skills = _skill_host(d)
+        mcp, fmt, key = _mcp_host(d)
+        if not skills and not mcp:
+            continue
+        if skills and skills.lower() in taken:
+            continue
+        if mcp and mcp.lower() in taken:
+            continue
+        add(
+            _norm_key(d.name),
+            {
+                "name": d.name.lstrip(".") or d.name,
+                "root": str(d),
+                "skills_dir": skills,
+                "mcp_path": mcp,
+                "format": fmt,
+                "mcp_key": key,
+                "evidence": "+".join(x for x in ("skills" if skills else "", "mcp" if mcp else "") if x),
+            },
+        )
+
+    # 2) 主目录下散落的 *.json —— 有些工具把 MCP 放单个文件
+    try:
+        for f in sorted(HOME.iterdir(), key=lambda p: p.name.lower()):
+            if not f.is_file() or f.suffix.lower() != ".json" or str(f).lower() in taken:
+                continue
+            fmt, key = _mcp_file(f)
+            if not fmt:
+                continue
+            add(
+                _norm_key(f.stem),
+                {
+                    "name": f.stem.lstrip(".") or f.stem,
+                    "root": str(f.parent),
+                    "skills_dir": "",
+                    "mcp_path": str(f),
+                    "format": fmt,
+                    "mcp_key": key,
+                    "evidence": "mcp",
+                },
+            )
+    except OSError:
+        pass
+
+    return sorted(found.values(), key=lambda x: str(x["name"]).lower())
+
+
+def custom_agents() -> list[dict[str, Any]]:
+    """已经纳入管理的名单外工具."""
+    out = []
+    for key, c in (read_locations().get("custom") or {}).items():
+        if isinstance(c, dict):
+            out.append({"key": key, "name": c.get("name") or key, **{k: v for k, v in c.items() if k != "name"}})
     return out
 
 
@@ -279,6 +471,9 @@ def locations_snapshot() -> dict[str, Any]:
         "file": str(LOCATIONS_FILE),
         "home": str(HOME),
         "agents": rows,
+        # 名单外的: 已经纳入的 + 这次扫到的新候选
+        "custom": custom_agents(),
+        "discovered": discover(),
     }
 
 
@@ -286,11 +481,29 @@ def locations_snapshot() -> dict[str, Any]:
 ALLOWED_FIELDS = ("root", "skills_dir", "mcp_path")
 
 
+def _atomic_write(data: dict[str, Any]) -> None:
+    """原子写 locations.json: 同目录临时文件 + replace, 中途崩了也不留半截 json."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, ensure_ascii=False, indent=2)
+    fd, tmp = tempfile.mkstemp(dir=str(DATA_DIR), prefix=".locations-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, LOCATIONS_FILE)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def save_locations(payload: dict[str, Any]) -> None:
     """写 data/locations.json.
 
     只接受 source 与 agents.{key}.{root,skills_dir,mcp_path}; 其他键忽略,
     免得界面传什么就存什么, 把文件写成垃圾。空值表示"用默认"。
+    custom 段(已纳入的名单外工具)原样保留 —— 它由 add_custom_agent 单独维护。
     """
     data: dict[str, Any] = {}
     src = str(payload.get("source") or "").strip()
@@ -307,20 +520,50 @@ def save_locations(payload: dict[str, Any]) -> None:
     if agents_out:
         data["agents"] = agents_out
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(data, ensure_ascii=False, indent=2)
-    # 原子写: 同目录临时文件 + replace, 中途崩了也不会留半截 json
-    fd, tmp = tempfile.mkstemp(dir=str(DATA_DIR), prefix=".locations-", suffix=".json")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.replace(tmp, LOCATIONS_FILE)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    custom = read_locations().get("custom")
+    if custom:
+        data["custom"] = custom
+    _atomic_write(data)
+
+
+def add_custom_agent(item: dict[str, Any]) -> str:
+    """把发现到的工具纳入管理. 返回它的 key（可能因重名被加了后缀）."""
+    data = read_locations()
+    custom = dict(data.get("custom") or {})
+    key = _norm_key(str(item.get("key") or item.get("name") or "tool"))
+    base, i = key, 2
+    while key in custom or key in AGENT_MAP:
+        key = f"{base}{i}"
+        i += 1
+
+    entry = {
+        "name": str(item.get("name") or key),
+        "skills_dir": str(item.get("skills_dir") or ""),
+        "mcp_path": str(item.get("mcp_path") or ""),
+        "format": str(item.get("format") or "json"),
+        "mcp_key": str(item.get("mcp_key") or "mcpServers"),
+    }
+    if item.get("enable_field"):
+        entry["enable_field"] = str(item["enable_field"])
+    custom[key] = entry
+    data["custom"] = custom
+    _atomic_write(data)
+    return key
+
+
+def remove_custom_agent(key: str) -> bool:
+    """撤销纳入: 只从配置里摘掉, 不碰那个工具的任何文件."""
+    data = read_locations()
+    custom = dict(data.get("custom") or {})
+    if key not in custom:
+        return False
+    custom.pop(key)
+    if custom:
+        data["custom"] = custom
+    else:
+        data.pop("custom", None)
+    _atomic_write(data)
+    return True
 
 
 def ensure_dirs() -> None:

@@ -244,6 +244,10 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
 .chip-btn:hover { background: var(--accent-soft); }
 .chip-btn.is-danger { color: var(--bad); font-weight: 600; }
 .chip-btn.is-danger:hover { background: var(--bad-bg); }
+.chip-note {
+  font-size: 11px; color: var(--ink-3); max-width: 330px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* ---------------- 面板 ---------------- */
 .panel { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 15px 16px; margin-top: 16px; }

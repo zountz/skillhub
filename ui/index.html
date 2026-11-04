@@ -140,6 +140,18 @@
           <tbody id="pathBody"></tbody>
         </table>
       </div>
+      <div class="panel" id="discPanel" hidden>
+        <div class="panel-head">
+          <h2>名单外的工具</h2>
+          <p>
+            上面四家是内置名单。这里是<strong>扫主目录</strong>按特征找到的 —— 不靠名字：
+            有 <code>skills/</code> 且里面有 SKILL.md，或者有能读出 mcpServers 段的配置文件，就认。
+            纳入之后它会像内置的一样出现在总览和表格里。
+          </p>
+        </div>
+        <div class="groups" id="discGroups"></div>
+      </div>
+
       <p class="path-hint">
         留空 = 用自动探测到的默认值。改完点保存后，<strong>关掉窗口重新打开</strong>才生效 ——
         各模块的位置是启动时确定的。别人用这个项目不需要改这里：路径全部由用户主目录推导，探测不到时再手动指路。

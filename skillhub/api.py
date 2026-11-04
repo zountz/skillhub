@@ -338,6 +338,21 @@ class Bridge:
         return {"path": (picked[0] if picked else ""), "message": ""}
 
     @_wrap
+    def add_agent(self, item: dict[str, Any]) -> dict[str, Any]:
+        """把扫描发现的工具纳入管理. 只改 locations.json, 不碰对方任何文件."""
+        key = paths.add_custom_agent(item or {})
+        log_action("add_agent", f"纳入 {item.get('name') or key}")
+        return {"ok": True, "key": key, "message": f"已纳入 {item.get('name') or key}，重启后出现在列表里"}
+
+    @_wrap
+    def remove_agent(self, key: str) -> dict[str, Any]:
+        """撤销纳入 —— 只从配置里摘掉, 不动那个工具的任何文件."""
+        if not paths.remove_custom_agent(key):
+            return {"ok": False, "message": "不在已纳入的名单里"}
+        log_action("remove_agent", key)
+        return {"ok": True, "message": "已撤销纳入，重启后生效"}
+
+    @_wrap
     def detect_paths(self) -> dict[str, Any]:
         """重新探测一遍: 不看启动时的缓存, 也不看手填值.
 

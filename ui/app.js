@@ -678,6 +678,52 @@ async function renderPaths(force) {
     );
   });
   el('pathBody').innerHTML = rows.join('');
+  renderDiscovered();
+}
+
+/* 名单外的工具: 已纳入的可以撤销, 新扫到的可以纳入.
+   两者都是改 locations.json, 不动对方磁盘上的任何东西。 */
+function renderDiscovered() {
+  const panel = el('discPanel');
+  const known = LOC.custom || [];
+  const found = LOC.discovered || [];
+
+  const knownChips = known
+    .map(
+      (c) => `<span class="chip"><span class="chip-name">${esc(c.name)}</span>
+        <span class="chip-note">${esc([c.skills_dir, c.mcp_path].filter(Boolean).map(shortPath).join(' · ') || '—')}</span>
+        <button class="chip-btn" data-removeagent="${esc(c.key)}" title="只从配置里摘掉，不动那个工具的文件">撤销纳入</button>
+      </span>`
+    )
+    .join('');
+
+  const newChips = found
+    .map(
+      (f) => `<span class="chip"><span class="chip-name">${esc(f.name)}</span>
+        <span class="chip-note">${esc([f.skills_dir, f.mcp_path].filter(Boolean).map(shortPath).join(' · '))}</span>
+        <button class="chip-btn" data-addagent="${esc(f.key)}" title="纳入后参与同步与删除管理">纳入</button>
+      </span>`
+    )
+    .join('');
+
+  if (!known.length && !found.length) {
+    panel.hidden = false;
+    el('discGroups').innerHTML = `<div class="empty">主目录里没扫到名单外的工具</div>`;
+    return;
+  }
+  panel.hidden = false;
+  el('discGroups').innerHTML = `
+    ${known.length ? `<div class="group"><div class="group-head"><span class="group-name">已纳入</span>
+      <span class="group-count">${known.length} 个</span></div><div class="chip-row">${knownChips}</div></div>` : ''}
+    ${found.length ? `<div class="group"><div class="group-head"><span class="group-name">扫到但还没纳入</span>
+      <span class="group-count">${found.length} 个</span></div><div class="chip-row">${newChips}</div></div>` : ''}`;
+}
+
+/* 只为了在提示里短一点: 把自己的主目录折成 ~ */
+function shortPath(p) {
+  const home = LOC && LOC.home ? LOC.home.replace(/\\/g, '\\') : '';
+  if (!p) return '';
+  return home && p.toLowerCase().startsWith(home.toLowerCase()) ? '~' + p.slice(home.length) : p;
 }
 
 el('btnPathSave').addEventListener('click', (e) =>
@@ -736,9 +782,30 @@ async function refresh() {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target.closest(
-    '[data-view],[data-skill],[data-mcp],[data-adopt],[data-adoptmcp],[data-fixskill],[data-mcpglobal],[data-openpath],[data-open],[data-delskill],[data-delunmanaged],[data-delmcp],[data-delmcporphan],[data-pick]'
+    '[data-view],[data-skill],[data-mcp],[data-adopt],[data-adoptmcp],[data-fixskill],[data-mcpglobal],[data-openpath],[data-open],[data-delskill],[data-delunmanaged],[data-delmcp],[data-delmcporphan],[data-pick],[data-addagent],[data-removeagent]'
   );
   if (!t) return;
+
+  // 纳入 / 撤销纳入名单外的工具
+  if (t.dataset.addagent) {
+    const item = (LOC.discovered || []).find((x) => x.key === t.dataset.addagent);
+    if (!item) return toast('没找到这个候选，刷新一下看看', true);
+    return busy(t, async () => {
+      const r = await call('add_agent', item);
+      toast(r.message);
+      LOC = null;
+      await renderPaths(true);
+    });
+  }
+
+  if (t.dataset.removeagent) {
+    return busy(t, async () => {
+      const r = await call('remove_agent', t.dataset.removeagent);
+      toast(r.message, !r.ok);
+      LOC = null;
+      await renderPaths(true);
+    });
+  }
 
   // 导航
   if (t.dataset.view) return setView(t.dataset.view);
